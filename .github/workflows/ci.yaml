@@ -1,27 +1,37 @@
-name: CostGuard CI Pipeline
+name: CostGuard CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
 
 jobs:
-  build-and-test:
+  prototype:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Source Code
-      uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
-    - name: Build Docker Image
-      run: docker build -t costguard-api:v1 .
+      - name: Build prototype image
+        run: docker compose --profile demo build
 
-    - name: Run Container
-      run: docker run -d -p 8000:8000 --name test-service costguard-api:v1
+      - name: Unit tests
+        run: docker compose --profile demo run --rm --no-deps app python -m unittest discover -v
 
-    - name: Wait for API to initialize
-      run: sleep 3
+      - name: Start demo stack
+        run: docker compose --profile demo up -d --wait
 
-    - name: Run Bash Validation
-      run: bash validate.sh
+      - name: End-to-end integration
+        run: docker compose --profile demo exec -T app python -m tests.e2e
+
+      - name: Legacy comparison smoke check
+        run: bash validate.sh
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --profile demo logs --no-color --tail=200
+
+      - name: Stop stack
+        if: always()
+        run: docker compose --profile demo down

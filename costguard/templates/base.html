@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}CostGuard{% endblock %}</title>
+  <style>
+    :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172024; background: #f4f6f4; }
+    * { box-sizing: border-box; } body { margin: 0; } a { color: #165e4b; }
+    header { background: #102e29; color: #fff; padding: 1rem 2rem; display: flex; gap: 2rem; align-items: center; }
+    header a { color: #d9f4e8; text-decoration: none; } header strong { font-size: 1.25rem; color: #fff; }
+    nav { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+    main { max-width: 1180px; margin: 2rem auto; padding: 0 1rem 3rem; }
+    h1 { font-size: 2rem; margin-bottom: .3rem; } h2 { font-size: 1.2rem; }
+    .muted { color: #586a66; } .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap: 1rem; }
+    .card { background: white; border: 1px solid #d8e2dc; border-radius: 12px; padding: 1.2rem; margin: 1rem 0; box-shadow: 0 2px 12px #1e3d3110; }
+    label { display:block; font-weight: 600; margin: .8rem 0 .25rem; }
+    input, select, textarea { width: 100%; border: 1px solid #b8ccc1; border-radius: 7px; padding: .65rem; font: inherit; background: white; }
+    textarea { min-height: 18rem; font-family: ui-monospace, monospace; font-size: .85rem; }
+    button, .button { border: 0; background: #176a50; color: white; padding: .7rem 1rem; border-radius: 7px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
+    button:hover, .button:hover { background: #0f4f3c; color:white; }
+    table { width: 100%; border-collapse: collapse; } th,td { padding: .7rem; border-bottom: 1px solid #e3ebe6; text-align: left; vertical-align: top; }
+    .status { font-weight: 700; } .fail,.error,.inconclusive { color: #a64622; } .pass,.completed,.ok { color: #176a50; }
+    .metric { font-size: 1.6rem; font-weight: 700; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f6f2; padding: 1rem; border-radius: 8px; }
+    .notice { padding: .8rem; border-radius: 7px; margin: 1rem 0; background: #e5efe9; }
+    .row { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+  </style>
+</head>
+<body><header><a href="/"><strong>CostGuard</strong></a><nav>
+  <a href="/">Overview</a><a href="/connections">Connections</a><a href="/experiments">Experiments</a>
+  <a href="/reports">Reports</a><a href="/scenarios">Scenarios</a><a href="/docs">API</a>
+</nav></header><main>{% block content %}{% endblock %}</main></body></html>

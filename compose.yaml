@@ -1,0 +1,77 @@
+name: costguard
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: costguard
+      POSTGRES_USER: costguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-costguard-local}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U costguard -d costguard"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    image: costguard:prototype
+    command: ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://costguard:${POSTGRES_PASSWORD:-costguard-local}@postgres:5432/costguard
+      GATEWAY_URL: http://bifrost:8080
+      BIFROST_PUBLIC_URL: http://localhost:8080
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  runner:
+    image: costguard:prototype
+    command: ["python", "-m", "costguard.runner"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://costguard:${POSTGRES_PASSWORD:-costguard-local}@postgres:5432/costguard
+      GATEWAY_URL: http://bifrost:8080
+    depends_on:
+      app:
+        condition: service_healthy
+
+  bifrost:
+    image: maximhq/bifrost:v2.2.3
+    profiles: ["gateway", "demo", "local"]
+    environment:
+      APP_HOST: 0.0.0.0
+      BIFROST_ENCRYPTION_KEY: ${BIFROST_ENCRYPTION_KEY:-local-only-change-this-key-before-adding-secrets}
+      BIFROST_SETUP_TOKEN: ${BIFROST_SETUP_TOKEN:-costguard-local-setup-change-me}
+    volumes:
+      - bifrost_data:/app/data
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  ollama:
+    image: ollama/ollama:0.34.1
+    profiles: ["local"]
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+
+  mock-provider:
+    image: costguard:prototype
+    command: ["uvicorn", "demo.mock_provider:app", "--host", "0.0.0.0", "--port", "9000"]
+    profiles: ["demo"]
+
+volumes:
+  postgres_data:
+  bifrost_data:
+  ollama_data:

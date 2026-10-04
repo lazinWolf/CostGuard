@@ -1,0 +1,79 @@
+digraph CostGuardWorkflow {
+  graph [
+    rankdir=LR,
+    bgcolor="#101820",
+    pad="0.35",
+    nodesep="0.52",
+    ranksep="0.85",
+    splines=ortho,
+    outputorder=edgesfirst,
+    fontname="DejaVu Sans"
+  ];
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#335B7A",
+    fillcolor="#073458",
+    fontcolor="#DAECFA",
+    fontname="DejaVu Sans",
+    fontsize=15,
+    margin="0.23,0.17",
+    penwidth=1.2
+  ];
+  edge [
+    color="#7E98AA",
+    arrowsize=0.65,
+    penwidth=1.2
+  ];
+
+  baseline [label="Baseline workflow"];
+  candidate [label="Candidate change\nPrompt · model · routing · agent"];
+  cases [label="Representative cases\nand traffic assumptions"];
+  run [label="Run matched workloads", fillcolor="#10527B"];
+
+  app [label="AI application\nunder test"];
+  dependencies [label="Gateway · cloud/local models\nTools · retrieval as used"];
+  traces [label="Execution traces\nand outputs"];
+  quality [label="Quality evaluation"];
+  evidence [label="Normalized, versioned\nworkload evidence", fillcolor="#10527B"];
+
+  prices [label="Versioned prices"];
+  compare [label="Compare, profile,\nand explain cost", fillcolor="#10527B"];
+  simulate [label="Simulate alternatives"];
+  policy [label="Check economic policies", fillcolor="#10527B"];
+
+  reports [label="Developer reports\nand API"];
+  ci [label="Pre-deployment CI gate"];
+  mcp [label="Agent-facing MCP advice"];
+  decision [label="Ship, revise,\nor investigate", fillcolor="#146144", color="#43886B"];
+  production [label="Production traces\nand workload mix", fillcolor="#3A315D", color="#6C6291"];
+
+  { rank=same; baseline; candidate; cases; }
+  { rank=same; quality; evidence; }
+  { rank=same; simulate; policy; }
+  { rank=same; reports; ci; mcp; }
+
+  baseline -> run;
+  candidate -> run;
+  cases -> run;
+  run -> app -> dependencies -> traces;
+  app -> traces [constraint=false];
+  traces -> quality;
+  traces -> evidence;
+  quality -> evidence;
+  evidence -> compare;
+  prices -> compare;
+  cases -> compare [constraint=false];
+  compare -> simulate;
+  compare -> policy;
+  simulate -> policy;
+  policy -> reports;
+  policy -> ci;
+  policy -> mcp;
+  reports -> decision;
+  ci -> decision;
+  mcp -> decision;
+  decision -> production [style=dashed, color="#9185BB"];
+  production -> evidence [style=dashed, color="#9185BB", constraint=false];
+  simulate -> candidate [style=dashed, color="#A49B70", constraint=false];
+}

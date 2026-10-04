@@ -1,0 +1,54 @@
+{
+  "baseline": {
+    "name": "main",
+    "runs": [
+      {
+        "case_id": "support-question",
+        "calls": [
+          {
+            "provider": "example-ai",
+            "model": "small",
+            "input_tokens": 1000,
+            "output_tokens": 500
+          }
+        ],
+        "latency_ms": 1000,
+        "quality_score": 0.80
+      }
+    ]
+  },
+  "candidate": {
+    "name": "feature/new-prompt",
+    "runs": [
+      {
+        "case_id": "support-question",
+        "calls": [
+          {
+            "provider": "example-ai",
+            "model": "small",
+            "input_tokens": 1500,
+            "output_tokens": 500
+          }
+        ],
+        "latency_ms": 1200,
+        "quality_score": 0.84
+      }
+    ]
+  },
+  "pricing": {
+    "version": "example-2026-09",
+    "source": "example fixture",
+    "entries": [
+      {
+        "provider": "example-ai",
+        "model": "small",
+        "input_per_million_usd": 10,
+        "output_per_million_usd": 20
+      }
+    ]
+  },
+  "monthly_requests": 100000,
+  "policy": {
+    "max_cost_increase_percent": 20
+  }
+}

@@ -1,3 +1,39 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+.aws/
+secrets/
+*.key
+*.pem
+
+# Python environments, caches, and packaging
 .venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Test results and local execution data
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+/artifacts/
+/reports/
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

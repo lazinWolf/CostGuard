@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block title %}CostGuard overview{% endblock %}
+{% block content %}<h1>Economic experiments</h1><p class="muted">Run comparable workloads, save a baseline, and decide whether a change stays within policy.</p>
+<div class="grid"><div class="card"><h2>1. Connect a model</h2><p>Configure local or cloud providers in Bifrost.</p><a class="button" href="/connections">Connections</a></div>
+<div class="card"><h2>2. Run a case suite</h2><p>Capture calls, usage, latency and quality.</p><a class="button" href="/experiments">Experiments</a></div>
+<div class="card"><h2>3. Compare and gate</h2><p>Inspect cost changes and save a policy result.</p><a class="button" href="/reports">Reports</a></div></div>
+<div class="grid"><section class="card"><h2>Recent runs</h2>{% for a in artifacts %}<p><a href="/artifacts/{{a.id}}">{{a.name}}</a> <span class="muted">{{a.suite_id}}</span></p>{% else %}<p>No saved runs yet.</p>{% endfor %}</section>
+<section class="card"><h2>Recent reports</h2>{% for r in reports %}<p><a href="/reports/{{r.id}}">{{r.id[:8]}}</a> <span class="status {{r.status}}">{{r.status}}</span></p>{% else %}<p>No comparisons yet.</p>{% endfor %}</section></div>{% endblock %}

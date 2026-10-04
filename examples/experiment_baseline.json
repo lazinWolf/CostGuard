@@ -1,0 +1,21 @@
+{
+  "suite_id": "demo-suite",
+  "name": "baseline",
+  "kind": "prompt",
+  "provider": "costguard-mock",
+  "model": "echo",
+  "system_prompt": "Answer briefly.",
+  "cases": [
+    {"case_id": "alpha", "prompt": "alpha", "expected_text": "alpha"},
+    {"case_id": "bravo", "prompt": "bravo", "expected_text": "bravo"},
+    {"case_id": "charlie", "prompt": "charlie", "expected_text": "charlie"}
+  ],
+  "pricing": {
+    "version": "mock-2026-09",
+    "source": "demonstration only",
+    "entries": [{"provider": "costguard-mock", "model": "echo",
+                 "input_per_million_usd": 10, "output_per_million_usd": 20}]
+  },
+  "limits": {"timeout_seconds": 10, "max_output_tokens": 32, "max_attempts": 1,
+             "max_tool_calls": 2, "max_steps": 4}
+}

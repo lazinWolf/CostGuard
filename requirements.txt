@@ -11,3 +11,9 @@ starlette==1.6.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 uvicorn==0.53.0
+SQLAlchemy==2.0.43
+alembic==1.16.5
+psycopg[binary]==3.2.9
+httpx==0.28.1
+Jinja2==3.1.6
+mcp==2.2.0

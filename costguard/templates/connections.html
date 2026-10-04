@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Connections · CostGuard{% endblock %}
+{% block content %}<h1>Model connections</h1><p class="muted">Bifrost manages provider URLs, API keys and model routes. CostGuard records the model you choose for an experiment and uses your explicit pricing snapshot.</p>
+<div class="card"><h2>Gateway <span class="status {{gateway.status}}">{{gateway.status}}</span></h2>
+<p><a class="button" href="{{gateway.settings_url}}" target="_blank" rel="noopener noreferrer">Open provider settings ↗</a></p>
+<p class="muted">The gateway opens in a separate tab. Add an OpenAI-compatible provider with your base URL, key, and model, or connect a local model server.</p>
+<h3>Available model IDs</h3>{% if gateway.models %}<ul>{% for model in gateway.models %}<li><code>{{model}}</code></li>{% endfor %}</ul>{% else %}<p>None discovered yet. Check the gateway and configure a provider.</p>{% endif %}</div>{% endblock %}
