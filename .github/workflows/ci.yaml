@@ -9,6 +9,8 @@ on:
 jobs:
   prototype:
     runs-on: ubuntu-latest
+    env:
+      COSTGUARD_DEMO: "1"
     steps:
       - name: Check out source
         uses: actions/checkout@v4

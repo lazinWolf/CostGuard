@@ -73,6 +73,26 @@ class JobRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class SettingRow(Base):
+    __tablename__ = "settings"
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSONB)
+
+
+class InvestigationRow(Base):
+    __tablename__ = "investigations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    report_id: Mapped[str] = mapped_column(String(36), ForeignKey("comparisons.id"))
+    state: Mapped[str] = mapped_column(String(24), index=True)
+    request: Mapped[dict] = mapped_column(JSONB)
+    result: Mapped[dict] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    proposal_job_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("jobs.id"), nullable=True)
+    proposal_report_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("comparisons.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 @contextmanager
 def session_scope():
     with Session(engine) as session:
@@ -256,3 +276,144 @@ def cancel_job(job_id: str) -> bool:
             return False
         row.state = "cancelled"
         return True
+
+
+def get_analyst_settings() -> dict | None:
+    with session_scope() as session:
+        row = session.get(SettingRow, "analyst")
+        return row.payload if row else None
+
+
+def save_analyst_settings(settings) -> None:
+    with session_scope() as session:
+        row = session.get(SettingRow, "analyst")
+        if row is None:
+            session.add(SettingRow(id="analyst", payload=_json(settings)))
+        else:
+            row.payload = _json(settings)
+
+
+def source_experiment(artifact_id: str) -> ExperimentSpec | None:
+    with session_scope() as session:
+        row = session.scalars(select(JobRow).where(JobRow.artifact_id == artifact_id)
+                              .order_by(JobRow.created_at.desc()).limit(1)).first()
+        return ExperimentSpec.model_validate(row.spec) if row else None
+
+
+def create_investigation(report_id: str, question: str, analyst, source=None) -> str:
+    investigation_id = str(uuid4())
+    with session_scope() as session:
+        session.add(InvestigationRow(
+            id=investigation_id, report_id=report_id, state="queued", result={},
+            request={"question": question, "analyst": _json(analyst),
+                     "source_spec": _json(source) if source else None},
+        ))
+    return investigation_id
+
+
+def _investigation_view(row: InvestigationRow) -> dict:
+    return {"id": row.id, "report_id": row.report_id, "state": row.state,
+            "request": row.request, "result": row.result, "error": row.error,
+            "proposal_job_id": row.proposal_job_id, "proposal_report_id": row.proposal_report_id,
+            "created_at": row.created_at.isoformat()}
+
+
+def get_investigation(investigation_id: str) -> dict | None:
+    with session_scope() as session:
+        row = session.get(InvestigationRow, investigation_id)
+        return _investigation_view(row) if row else None
+
+
+def list_investigations() -> list[dict]:
+    with session_scope() as session:
+        rows = session.scalars(select(InvestigationRow).order_by(InvestigationRow.created_at.desc()).limit(100)).all()
+        return [{"id": row.id, "report_id": row.report_id, "state": row.state,
+                 "question": row.request["question"], "created_at": row.created_at.isoformat()}
+                for row in rows]
+
+
+def claim_investigation() -> str | None:
+    now = datetime.now(timezone.utc)
+    with session_scope() as session:
+        expired = session.scalars(select(InvestigationRow).where(
+            InvestigationRow.state == "running", InvestigationRow.lease_until < now)).all()
+        for row in expired:
+            row.state = "interrupted"
+            row.error = "Runner lease expired; analyst calls are not replayed automatically"
+        row = session.scalars(select(InvestigationRow).where(InvestigationRow.state == "queued")
+            .order_by(InvestigationRow.created_at).with_for_update(skip_locked=True).limit(1)).first()
+        if row is None:
+            return None
+        row.state = "running"
+        row.lease_until = now + timedelta(seconds=180)
+        return row.id
+
+
+def update_investigation(investigation_id: str, *, result=None, state=None, error=None) -> None:
+    with session_scope() as session:
+        row = session.get(InvestigationRow, investigation_id, with_for_update=True)
+        if row is None:
+            return
+        if result is not None:
+            row.result = json.loads(json.dumps(result, default=str))
+        if row.state == "running":
+            if state is not None:
+                row.state = state
+            row.error = error
+            row.lease_until = datetime.now(timezone.utc) + timedelta(seconds=180)
+
+
+def cancel_investigation(investigation_id: str) -> bool:
+    with session_scope() as session:
+        row = session.get(InvestigationRow, investigation_id, with_for_update=True)
+        if row is None or row.state not in {"queued", "running"}:
+            return False
+        row.state = "cancelled"
+        return True
+
+
+def run_investigation_proposal(investigation_id: str) -> str:
+    """The explicit execution action is idempotent to avoid duplicate paid jobs."""
+    with session_scope() as session:
+        row = session.get(InvestigationRow, investigation_id, with_for_update=True)
+        if row is None:
+            raise ValueError("investigation not found")
+        if row.proposal_job_id:
+            return row.proposal_job_id
+        if row.state != "completed" or not row.result.get("proposal"):
+            raise ValueError("completed investigation has no executable proposal")
+        spec = ExperimentSpec.model_validate(row.result["proposal"]["spec"])
+        job_id = str(uuid4())
+        session.add(JobRow(id=job_id, state="queued", spec=_json(spec), total=len(spec.cases)))
+        session.flush()
+        row.proposal_job_id = job_id
+        return job_id
+
+
+def compare_investigation_proposal(investigation_id: str) -> str:
+    """Compare the proposed run against the original baseline and original policy."""
+    from .economics import compare_artifacts
+    from .models import ComparisonPolicy, PricingCatalog
+    with session_scope() as session:
+        row = session.get(InvestigationRow, investigation_id, with_for_update=True)
+        if row is None:
+            raise ValueError("investigation not found")
+        if row.proposal_report_id:
+            return row.proposal_report_id
+        job = session.get(JobRow, row.proposal_job_id) if row.proposal_job_id else None
+        if job is None or not job.artifact_id or job.state != "completed":
+            raise ValueError("proposed experiment has not completed")
+        original = session.get(ComparisonRow, row.report_id)
+        request = dict(original.request_payload)
+        request["candidate_id"] = job.artifact_id
+        left = ExecutionArtifact.model_validate(session.get(ArtifactRow, original.baseline_id).payload)
+        right = ExecutionArtifact.model_validate(session.get(ArtifactRow, job.artifact_id).payload)
+        report = compare_artifacts(left, right, PricingCatalog.model_validate(request["pricing"]),
+            ComparisonPolicy.model_validate(request["policy"]) if request.get("policy") else None,
+            request.get("monthly_requests"))
+        report_id = str(uuid4())
+        session.add(ComparisonRow(id=report_id, baseline_id=original.baseline_id,
+            candidate_id=job.artifact_id, request_payload=request, report=_json(report)))
+        session.flush()
+        row.proposal_report_id = report_id
+        return report_id

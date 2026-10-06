@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% block title %}Investigations · CostGuard{% endblock %}
+{% block content %}
+<h1>Investigate workload economics</h1>
+<p class="muted">Ask the analyst to examine saved evidence, investigate a regression, and propose an experiment you can measure.</p>
+{% if analyst and reports %}
+<form class="card" id="investigation-form">
+  <label for="report">Comparison to investigate</label>
+  <select id="report" required>{% for report in reports %}<option value="{{report.id}}" {% if report.id == selected_report %}selected{% endif %}>{{report.id[:8]}} · {{report.status}} · {{report.created_at[:10]}}</option>{% endfor %}</select>
+  <label for="question">What do you want to understand or improve?</label>
+  <textarea class="question" id="question" required minlength="4" maxlength="2000">Explain the cost change, inspect the cases contributing most, and propose a prompt experiment that could reduce cost while preserving quality.</textarea>
+  <p>Analyst: <strong>{{analyst.provider}}/{{analyst.model}}</strong> · up to {{analyst.max_calls}} calls · stop threshold ${{analyst.stop_after_usd}}.</p>
+  <p class="muted">Starting an investigation calls your selected model. Its cost is recorded separately. Thresholds are checked between calls; an in-flight call can exceed them.</p>
+  <p class="muted">The analyst receives the selected report, configuration and requested case evidence, including available case inputs.</p>
+  <button id="start" type="submit">Start investigation</button>
+  <p id="message" class="notice" hidden></p>
+</form>
+{% else %}
+<div class="notice">{% if not analyst %}<p><a href="/connections">Configure an analyst model</a> to begin.</p>{% endif %}{% if not reports %}<p>Create a comparison on <a href="/reports">Reports</a>, or <a href="/">load the demo</a>, to supply evidence.</p>{% endif %}</div>
+{% endif %}
+<section class="card"><h2>Saved investigations</h2>
+{% if investigations %}<table><tr><th>Question</th><th>Status</th></tr>{% for item in investigations %}<tr><td><a href="/investigations/{{item.id}}">{{item.question}}</a></td><td class="status {{item.state}}">{{item.state}}</td></tr>{% endfor %}</table>{% else %}<p>No investigations yet.</p>{% endif %}</section>
+<script>
+document.getElementById('investigation-form')?.addEventListener('submit', async event => {
+  event.preventDefault(); const button=document.getElementById('start'); button.disabled=true;
+  try { const response=await fetch('/api/v1/investigations', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report_id:document.getElementById('report').value,question:document.getElementById('question').value})});
+    const data=await response.json(); if(!response.ok) throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));
+    location.href='/investigations/'+data.investigation_id;
+  } catch(error) { const message=document.getElementById('message');message.hidden=false;message.textContent=error.message;button.disabled=false; }
+});
+</script>
+{% endblock %}

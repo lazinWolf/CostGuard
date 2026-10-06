@@ -34,12 +34,14 @@ def bootstrap():
 
         existing = client.get(f"{base}/api/providers/costguard-mock/keys")
         existing.raise_for_status()
-        if any(key.get("name") == "costguard-mock-key" for key in existing.json().get("keys", [])):
-            return
-        key = client.post(f"{base}/api/providers/costguard-mock/keys", json={
-            "name": "costguard-mock-key", "value": "dummy", "models": ["echo"], "weight": 1.0,
-        })
-        key.raise_for_status()
+        names = {key.get("name") for key in existing.json().get("keys", [])}
+        for name, model in (("costguard-mock-key", "echo"), ("costguard-analyst-key", "analyst")):
+            if name in names:
+                continue
+            key = client.post(f"{base}/api/providers/costguard-mock/keys", json={
+                "name": name, "value": "dummy", "models": [model], "weight": 1.0,
+            })
+            key.raise_for_status()
 
 
 if __name__ == "__main__":

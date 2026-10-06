@@ -12,6 +12,21 @@ mcp = MCPServer("CostGuard")
 
 
 @mcp.tool()
+def list_investigations() -> list[dict]:
+    """List model-led investigations without initiating model calls."""
+    return db.list_investigations()
+
+
+@mcp.tool()
+def get_investigation(investigation_id: str) -> dict:
+    """Read findings, evidence-tool activity, proposals and separately recorded analyst cost."""
+    result = db.get_investigation(investigation_id)
+    if result is None:
+        raise ValueError("investigation not found")
+    return result
+
+
+@mcp.tool()
 def list_runs() -> list[dict]:
     """List saved workload execution artifacts."""
     return db.list_artifacts()

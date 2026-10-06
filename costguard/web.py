@@ -1,6 +1,8 @@
 """Small local interface for the complete experiment-to-report flow."""
 
 import json
+import os
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -11,6 +13,7 @@ from . import db
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+templates.env.filters["money"] = lambda value: format(Decimal(str(value)), ".8f") if value is not None else "Unknown"
 root = Path(__file__).resolve().parent.parent
 
 
@@ -19,13 +22,36 @@ def dashboard(request: Request):
     return templates.TemplateResponse(request, "dashboard.html", {
         "jobs": db.list_jobs()[:8], "reports": db.list_comparisons()[:8],
         "artifacts": db.list_artifacts()[:8],
+        "investigations": db.list_investigations()[:8],
+        "demo_enabled": os.environ.get("COSTGUARD_DEMO") == "1",
     })
 
 
 @router.get("/connections", response_class=HTMLResponse)
 def connections(request: Request):
     from .api import gateway_status
-    return templates.TemplateResponse(request, "connections.html", {"gateway": gateway_status()})
+    return templates.TemplateResponse(request, "connections.html", {
+        "gateway": gateway_status(), "analyst": db.get_analyst_settings(),
+    })
+
+
+@router.get("/investigations", response_class=HTMLResponse)
+def investigations_page(request: Request, report_id: str | None = None):
+    return templates.TemplateResponse(request, "investigations.html", {
+        "reports": db.list_comparisons(), "selected_report": report_id,
+        "analyst": db.get_analyst_settings(), "investigations": db.list_investigations(),
+    })
+
+
+@router.get("/investigations/{investigation_id}", response_class=HTMLResponse)
+def investigation_page(request: Request, investigation_id: str):
+    row = db.get_investigation(investigation_id)
+    if row is None:
+        raise HTTPException(404, "investigation not found")
+    proposal_job = db.get_job(row["proposal_job_id"]) if row["proposal_job_id"] else None
+    return templates.TemplateResponse(request, "investigation.html", {
+        "investigation": row, "proposal_job": proposal_job,
+    })
 
 
 @router.get("/experiments", response_class=HTMLResponse)

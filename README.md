@@ -1,6 +1,6 @@
 # CostGuard
 
-CostGuard is a local prototype for pre-deployment economic regression testing of AI workloads. It runs matched baseline and candidate cases through an LLM gateway, saves the resulting evidence, compares cost/latency/quality and execution behavior, and applies an explicit cost policy. Token counts are an input to the analysis, not the product.
+CostGuard is a local prototype for model-led economic investigation and pre-deployment regression testing of AI workloads. An analyst model can inspect saved comparisons and cases, propose a prompt experiment, and help you measure its outcome. The economic engine compares observed cost, latency, quality and execution behavior and applies explicit policies.
 
 For the intended product direction beyond this prototype, see [VISION.md](VISION.md).
 
@@ -9,15 +9,17 @@ For the intended product direction beyond this prototype, see [VISION.md](VISION
 Requires Docker Compose. All published ports bind to localhost. Before adding real provider keys, copy `.env.example` to `.env` and replace its passwords and gateway secrets.
 
 ```bash
-docker compose --profile demo up -d --build --wait
-docker compose --profile demo exec -T app python -m costguard.bootstrap_gateway
+COSTGUARD_DEMO=1 docker compose --profile demo up -d --build --wait
 ```
 
-Open [CostGuard](http://localhost:8000) and [Bifrost](http://localhost:8080). The demo uses a deterministic mock OpenAI-compatible provider: no paid model or downloaded Ollama model is needed. The Bifrost setup token is `costguard-local-setup-change-me` unless changed in `.env`. Finish Bifrost's admin setup before adding real keys; its dashboard/API are unprotected until an admin account exists.
+Open [CostGuard](http://localhost:8000) and click **Create demo comparison**. CostGuard registers its mock provider, runs paired cases, and opens the report. Click **Investigate this comparison**, then start the investigation. Review the findings and proposal, click **Run proposed experiment**, and compare the completed result against the original baseline. If an analyst was already configured, the demo preserves it: check the displayed analyst before starting an investigation.
+
+The mock workload and scripted mock analyst require no paid model or downloaded Ollama model. The analyst exercises the integration; it does not demonstrate real model reasoning. Bifrost is available at [localhost:8080](http://localhost:8080). Its setup token is `costguard-local-setup-change-me` unless changed in `.env`. Finish Bifrost's admin setup before adding real keys; its dashboard/API are unprotected until an admin account exists. The browser demo setup action is only available when `COSTGUARD_DEMO=1`.
 
 To run the bundled baseline and candidate from a terminal:
 
 ```bash
+docker compose --profile demo exec -T app python -m costguard.bootstrap_gateway
 docker compose --profile demo exec -T app python -m costguard run examples/experiment_baseline.json --wait
 docker compose --profile demo exec -T app python -m costguard run examples/experiment_candidate.json --wait
 ```
@@ -29,6 +31,17 @@ Copy their artifact IDs from the output, then select them on the CostGuard **Rep
 Start `--profile gateway` for cloud or other OpenAI-compatible providers, or `--profile local` to also start Ollama. Configure provider URL, API key, and models in Bifrost's UI, then use its `provider/model` pair in an experiment specification. For a provider on your private network, Bifrost requires an explicit private-network allowance in its provider settings. CostGuard never stores provider keys in experiment artifacts. Pricing is supplied as a versioned catalog in the experiment or comparison request; Bifrost's routing does not silently determine comparison prices.
 
 The browser/API is at `localhost:8000`, Bifrost at `localhost:8080`, and API docs at `localhost:8000/docs`. The stack has an app, a sequential job runner, PostgreSQL, and Bifrost; Ollama and the mock provider are profile-specific. The app runs its database migration on startup.
+
+## Configure a real analyst
+
+1. Configure a local or cloud model in Bifrost with chat tool-calling support.
+2. On **Connections**, enter its `provider/model` ID, explicit input/output prices, a pricing version, and investigation limits. These settings are separate from the workload model and are snapshotted for each investigation. Provider credentials remain in Bifrost. If inference requires a Bifrost virtual key, set `BIFROST_VIRTUAL_KEY` in `.env` and recreate the app and runner.
+3. On **Investigations**, select a comparison and ask a question. The runner executes a bounded tool loop: inspect comparison, inspect cases, optionally propose one prompt experiment, and return findings with references to inspected evidence.
+4. Review and explicitly run a proposal. CostGuard preserves the source case suite, workload model, pricing and execution limits. It queues the proposal once, then compares its measured result to the original baseline and policy. You can start another investigation on that result.
+
+The analyst receives selected report/configuration data and available case inputs requested through its tools. Findings are model interpretations; validated evidence references do not prove every claim is correct. Numerical policy results remain computed by the economic engine. Model calls and analyst spend are recorded separately, with no automatic retry or replay after a lost lease. Spend thresholds are checked between calls, not guaranteed caps on in-flight charges. Missing analyst usage stops the loop with unknown cost. A cancelled investigation stops further calls after the current request.
+
+Investigations, settings and measured outcomes are persisted in PostgreSQL. The API exposes `/api/v1/analyst` and `/api/v1/investigations`; MCP can list/read investigations without initiating paid calls. Imported artifacts can be investigated, but an executable proposal requires the candidate's original CostGuard job specification.
 
 ## Evidence and decisions
 

@@ -25,6 +25,8 @@ services:
       DATABASE_URL: postgresql+psycopg://costguard:${POSTGRES_PASSWORD:-costguard-local}@postgres:5432/costguard
       GATEWAY_URL: http://bifrost:8080
       BIFROST_PUBLIC_URL: http://localhost:8080
+      BIFROST_VIRTUAL_KEY: ${BIFROST_VIRTUAL_KEY:-}
+      COSTGUARD_DEMO: ${COSTGUARD_DEMO:-0}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -42,6 +44,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://costguard:${POSTGRES_PASSWORD:-costguard-local}@postgres:5432/costguard
       GATEWAY_URL: http://bifrost:8080
+      BIFROST_VIRTUAL_KEY: ${BIFROST_VIRTUAL_KEY:-}
     depends_on:
       app:
         condition: service_healthy

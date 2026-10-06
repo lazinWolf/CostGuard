@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% block title %}Investigation · CostGuard{% endblock %}
+{% block content %}{% set item=investigation %}{% set result=item.result %}{% set analyst=item.request.analyst %}
+<h1>Economic investigation</h1><p>{{item.request.question}}</p>
+<div class="card"><p>State: <span id="state" class="status {{item.state}}">{{item.state}}</span> · <a href="/reports/{{item.report_id}}">Measured comparison</a></p>
+<p>Analyst: {{analyst.provider}}/{{analyst.model}} · <span id="calls">{{result.get('calls',[])|length}}</span> / {{analyst.max_calls}} calls</p>
+<p>Investigation cost: <strong id="cost">{{('$' ~ result.cost_usd) if result.get('cost_known') else 'Unknown / not started'}}</strong> · price version {{analyst.pricing_version}}</p>
+{% if result.get('calls') and not result.get('cost_known') %}<p class="muted">Observed subtotal: ${{result.get('known_cost_usd','0')}}. In-flight or unobserved charges may be additional.</p>{% endif %}
+{% if item.error %}<p class="notice">{{item.error}}</p>{% endif %}
+{% if item.state in ['queued','running'] %}<p class="muted">The analyst is choosing evidence tools and building its findings. Cancellation stops further calls after the current request.</p><button onclick="action('cancel')">Cancel investigation</button>{% endif %}
+<p id="message" class="notice" hidden></p></div>
+{% if result.get('conclusion') %}{% set conclusion=result.conclusion %}
+<section class="card"><h2>Findings</h2><p>{{conclusion.summary}}</p>
+{% for finding in conclusion.findings %}<div class="finding"><p>{{finding.text}}</p><p class="muted">Evidence: {% for reference in finding.evidence %}<a href="/reports/{{item.report_id}}">{{reference}}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p></div>{% endfor %}
+<p class="muted">These are model interpretations of cited evidence. The linked comparison contains the calculated policy result.</p></section>
+{% if conclusion.hypotheses %}<section class="card"><h2>Hypotheses to test</h2><ul>{% for text in conclusion.hypotheses %}<li>{{text}}</li>{% endfor %}</ul></section>{% endif %}
+{% if conclusion.next_steps %}<section class="card"><h2>Next measurements</h2><ul>{% for text in conclusion.next_steps %}<li>{{text}}</li>{% endfor %}</ul></section>{% endif %}
+{% endif %}
+{% if result.get('proposal') %}{% set proposal=result.proposal %}
+<section class="card"><h2>Proposed prompt experiment</h2><p>{{proposal.rationale}}</p><pre>{{proposal.spec.system_prompt}}</pre>
+<p>Model: {{proposal.spec.provider}}/{{proposal.spec.model}} · {{proposal.spec.cases|length}} cases · original prices and execution limits.</p>
+{% if item.state == 'completed' and not item.proposal_job_id %}<p class="muted">Running this experiment calls the workload model and may incur provider charges. It is queued once even if this action is repeated.</p><button onclick="action('run-proposal')">Run proposed experiment</button>
+{% elif proposal_job %}<p>Experiment: <a href="/jobs/{{proposal_job.id}}">{{proposal_job.id[:8]}}</a> · <span class="status {{proposal_job.state}}">{{proposal_job.state}}</span></p>
+{% if item.proposal_report_id %}<a class="button" href="/reports/{{item.proposal_report_id}}">View measured outcome</a><a class="button" href="/investigations?report_id={{item.proposal_report_id}}">Investigate the outcome</a>
+{% elif proposal_job.state == 'completed' %}<button onclick="action('compare-proposal')">Compare against original baseline</button>{% endif %}
+{% endif %}
+<details><summary>Review complete experiment settings</summary><pre>{{proposal.spec|tojson(indent=2)}}</pre></details></section>
+{% endif %}
+{% if result.get('events') %}<section class="card"><h2>Evidence and tool activity</h2>{% for event in result.events %}<details><summary>{{loop.index}}. {{event.tool}}</summary><pre>{{event.result|tojson(indent=2)}}</pre></details>{% endfor %}</section>{% endif %}
+<script>
+const investigationId={{item.id|tojson}};
+async function action(name){const message=document.getElementById('message');document.querySelectorAll('button').forEach(button=>button.disabled=true);try{const response=await fetch('/api/v1/investigations/'+investigationId+'/'+name,{method:'POST'});const data=await response.json();if(!response.ok)throw Error(data.detail);location.reload();}catch(error){message.hidden=false;message.textContent=error.message;document.querySelectorAll('button').forEach(button=>button.disabled=false);}}
+async function poll(){try{const response=await fetch('/api/v1/investigations/'+investigationId);if(!response.ok)throw Error('Unable to refresh investigation');const data=await response.json();document.getElementById('calls').textContent=(data.result.calls||[]).length;document.getElementById('cost').textContent=data.result.cost_known?'$'+data.result.cost_usd:'Unknown / not started';if(data.state!=={{item.state|tojson}}){location.reload();return;}}catch(error){const message=document.getElementById('message');message.hidden=false;message.textContent=error.message;}setTimeout(poll,2000);}
+{% if item.state in ['queued','running'] %}setTimeout(poll,1000);{% endif %}
+{% if proposal_job and proposal_job.state in ['queued','running'] %}
+async function pollJob(){try{const response=await fetch('/api/v1/jobs/'+{{proposal_job.id|tojson}});if(response.ok){const data=await response.json();if(data.state!=={{proposal_job.state|tojson}}){location.reload();return;}}}catch(error){}setTimeout(pollJob,2000);}setTimeout(pollJob,1000);
+{% endif %}
+</script>{% endblock %}

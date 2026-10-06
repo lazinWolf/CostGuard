@@ -12,6 +12,7 @@ import httpx
 from . import db
 from .economics import case_cost
 from .execution import Call, CaseExecution, ExecutionArtifact, ExperimentSpec, Step
+from .investigation_worker import execute_investigation, gateway_headers
 
 
 def _quality(answer: str, expected: str | None) -> tuple[Decimal | None, str | None]:
@@ -109,7 +110,7 @@ def execute_job(job_id: str, spec: ExperimentSpec, gateway_url: str | None = Non
     heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
     heartbeat_thread.start()
     try:
-        with httpx.Client(base_url=url, headers={"Content-Type": "application/json"}) as client:
+        with httpx.Client(base_url=url, headers=gateway_headers()) as client:
             for input_case in spec.cases:
                 job = db.get_job(job_id)
                 if job is None or job["state"] == "cancelled":
@@ -166,6 +167,10 @@ def work_forever() -> None:
                     execute_job(job_id, spec)
                 except Exception as exc:
                     db.update_job(job_id, state="failed", error=f"runner error: {type(exc).__name__}")
+                continue
+            investigation_id = db.claim_investigation()
+            if investigation_id:
+                execute_investigation(investigation_id)
                 continue
         except Exception as exc:
             print(json.dumps({"event": "runner_error", "type": type(exc).__name__}), flush=True)

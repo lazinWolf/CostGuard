@@ -3,6 +3,7 @@
 import json
 import os
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -12,9 +13,94 @@ from . import db
 from .analysis import _compare, _mean
 from .economics import case_cost, compare_artifacts
 from .execution import ExecutionArtifact, ExperimentSpec
+from .investigation import AnalystSettings, InvestigationInput
 from .models import ComparisonPolicy, PricingCatalog, Schema
 
 router = APIRouter(prefix="/api/v1")
+
+
+@router.get("/analyst")
+def analyst_settings():
+    return {"settings": db.get_analyst_settings()}
+
+
+@router.put("/analyst")
+def configure_analyst(settings: AnalystSettings):
+    db.save_analyst_settings(settings)
+    return {"settings": settings.model_dump(mode="json")}
+
+
+@router.post("/demo", status_code=202)
+def start_demo():
+    if os.environ.get("COSTGUARD_DEMO") != "1":
+        raise HTTPException(404, "Demo is disabled. Start Compose with COSTGUARD_DEMO=1 and --profile demo.")
+    from .bootstrap_gateway import bootstrap
+    try:
+        bootstrap()
+    except (httpx.HTTPError, RuntimeError) as exc:
+        raise HTTPException(503, "Demo gateway setup failed. Check that the demo profile is running.") from exc
+    root = Path(__file__).resolve().parent.parent
+    specs = [ExperimentSpec.model_validate_json((root / "examples" / f"experiment_{name}.json").read_text())
+             for name in ("baseline", "candidate")]
+    if db.get_analyst_settings() is None:
+        db.save_analyst_settings(AnalystSettings(provider="costguard-mock", model="analyst",
+            pricing_version="mock-demo", input_per_million_usd=0, output_per_million_usd=0))
+    return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
+            "pricing": specs[0].pricing.model_dump(mode="json"),
+            "policy": {"max_cost_increase_percent": 10, "min_candidate_quality_score": 1}}
+
+
+@router.post("/investigations", status_code=202)
+def start_investigation(data: InvestigationInput):
+    settings = db.get_analyst_settings()
+    if settings is None:
+        raise HTTPException(409, "Configure an analyst model on Connections first")
+    saved = db.get_comparison(data.report_id)
+    if saved is None:
+        raise HTTPException(404, "comparison not found")
+    source = db.source_experiment(saved["request"]["candidate_id"])
+    artifact = db.get_artifact(saved["request"]["candidate_id"])
+    if source and ({case.case_id for case in source.cases} != {case.case_id for case in artifact.cases}
+                   or source.suite_id != artifact.suite_id):
+        source = None
+    return {"investigation_id": db.create_investigation(data.report_id, data.question,
+            AnalystSettings.model_validate(settings), source)}
+
+
+@router.get("/investigations")
+def investigations():
+    return db.list_investigations()
+
+
+@router.get("/investigations/{investigation_id}")
+def investigation(investigation_id: str):
+    result = db.get_investigation(investigation_id)
+    if result is None:
+        raise HTTPException(404, "investigation not found")
+    return result
+
+
+@router.post("/investigations/{investigation_id}/cancel")
+def stop_investigation(investigation_id: str):
+    if not db.cancel_investigation(investigation_id):
+        raise HTTPException(409, "investigation is not active")
+    return {"state": "cancelled"}
+
+
+@router.post("/investigations/{investigation_id}/run-proposal")
+def run_proposal(investigation_id: str):
+    try:
+        return {"job_id": db.run_investigation_proposal(investigation_id)}
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/investigations/{investigation_id}/compare-proposal")
+def compare_proposal(investigation_id: str):
+    try:
+        return {"report_id": db.compare_investigation_proposal(investigation_id)}
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 class ComparisonInput(Schema):
@@ -46,9 +132,10 @@ def readiness():
 
 @router.get("/gateway")
 def gateway_status():
+    from .investigation_worker import gateway_headers
     url = os.environ.get("GATEWAY_URL", "http://bifrost:8080")
     try:
-        with httpx.Client(timeout=3) as client:
+        with httpx.Client(timeout=3, headers=gateway_headers()) as client:
             response = client.get(f"{url}/v1/models")
             response.raise_for_status()
             models = response.json().get("data", [])
