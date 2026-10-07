@@ -6,7 +6,7 @@ from time import monotonic
 from typing import Any, Iterator, Literal
 from uuid import uuid4
 
-from .execution import Call, CaseExecution, Charge, ExecutionArtifact, Step
+from .execution import Call, CaseExecution, Charge, ExecutionArtifact, Step, CaseInput
 from .models import PricingCatalog
 
 
@@ -21,6 +21,8 @@ class CaseRecorder:
         self.status: Literal["ok", "error"] = "ok"
         self.error: str | None = None
         self.latency_ms = Decimal("0")
+        self.output_text: str | None = None
+        self.evaluation = None
 
     def record_chat(self, *, provider: str, model: str, response: dict[str, Any],
                     latency_ms: Decimal, attempt: int = 1,
@@ -40,8 +42,27 @@ class CaseRecorder:
             output_tokens=output_tokens if observed else None,
             usage_source=usage_source if observed else "missing",
             status="ok", latency_ms=latency_ms, attempt=attempt,
+            response_model=response.get("model"),
+            finish_reason=(response.get("choices") or [{}])[0].get("finish_reason"),
         ))
+        choices = response.get("choices") or []
+        if choices:
+            answer = choices[0].get("message", {}).get("content")
+            if isinstance(answer, str):
+                self.output_text = answer[:20000]
+                self.calls[-1].response_text = self.output_text
+                self.calls[-1].response_text_truncated = len(answer) > 20000
+            if choices[0].get("finish_reason") == "length" or self.calls[-1].response_text_truncated:
+                self.status, self.error = "error", "application model output was truncated"
         return step_id
+
+    def record_failure(self, *, provider: str, model: str, latency_ms: Decimal) -> None:
+        """A failed request may still be billed; never represent missing usage as zero."""
+        step_id = f"model-{len(self.calls) + 1}"
+        self.steps.append(Step(step_id=step_id, kind="model", name=model, latency_ms=latency_ms, status="error"))
+        self.calls.append(Call(call_id=str(uuid4()), step_id=step_id, provider=provider, model=model,
+                               status="error", usage_source="missing", latency_ms=latency_ms, attempt=1))
+        self.status, self.error = "error", "application model request failed; usage unknown"
 
     def record_step(self, *, kind: Literal["tool", "retrieval", "agent"],
                     name: str, latency_ms: Decimal, parent_step_id: str | None = None,
@@ -66,6 +87,7 @@ class CaseRecorder:
             quality_score=self.quality_score if self.status == "ok" else None,
             evaluator=self.evaluator if self.status == "ok" else None,
             error=self.error,
+            output_text=self.output_text, evaluation=self.evaluation,
         )
 
 
@@ -73,12 +95,13 @@ class ArtifactRecorder:
     """Collect one baseline or candidate artifact without changing the app's model client."""
 
     def __init__(self, *, suite_id: str, name: str, pricing: PricingCatalog,
-                 configuration: dict[str, str] | None = None):
+                 configuration: dict[str, str] | None = None, suite_cases: list[CaseInput] | None = None):
         self.suite_id = suite_id
         self.name = name
         self.pricing = pricing
         self.configuration = configuration or {}
         self.cases: list[CaseRecorder] = []
+        self.suite_cases = suite_cases
 
     @contextmanager
     def case(self, case_id: str) -> Iterator[CaseRecorder]:
@@ -96,6 +119,7 @@ class ArtifactRecorder:
 
     def artifact(self) -> ExecutionArtifact:
         return ExecutionArtifact(
+            schema_version=2 if self.suite_cases is not None else 1, suite_cases=self.suite_cases,
             artifact_id=uuid4(), suite_id=self.suite_id, name=self.name,
             configuration=self.configuration, pricing=self.pricing,
             cases=[case.as_execution() for case in self.cases],

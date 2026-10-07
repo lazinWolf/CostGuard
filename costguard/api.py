@@ -3,20 +3,91 @@
 import json
 import os
 from decimal import Decimal
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import Field
 
 from . import db
 from .analysis import _compare, _mean
 from .economics import case_cost, compare_artifacts
-from .execution import ExecutionArtifact, ExperimentSpec
+from .execution import ExecutionArtifact, ExperimentSpec, ExecutionLimits, suite_digest
 from .investigation import AnalystSettings, InvestigationInput
 from .models import ComparisonPolicy, PricingCatalog, Schema
 
 router = APIRouter(prefix="/api/v1")
+
+
+def analyst_for_report(saved):
+    left = db.get_artifact(saved["request"]["baseline_id"])
+    right = db.get_artifact(saved["request"]["candidate_id"])
+    if all(artifact and artifact.configuration.get("mode") == "fixture"
+           and artifact.configuration.get("provider") == "costguard-mock" for artifact in (left, right)):
+        return AnalystSettings(provider="costguard-mock", model="analyst", pricing_version="fixture-free",
+                               input_per_million_usd=0, output_per_million_usd=0).model_dump(mode="json")
+    return db.get_analyst_settings()
+
+
+class CandidateInput(Schema):
+    baseline_id: str
+    name: str = Field(default="Candidate", min_length=1, max_length=200)
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    system_prompt: str = Field(min_length=1, max_length=8000)
+    pricing: PricingCatalog
+    limits: ExecutionLimits
+    temperature: Decimal | None = Field(default=None, ge=0, le=2)
+
+
+@router.get("/examples/triage")
+def triage_example():
+    from .examples import triage_examples
+    return triage_examples()
+
+
+@router.get("/artifacts/{artifact_id}/source")
+def artifact_source(artifact_id: str):
+    source = db.source_experiment(artifact_id)
+    return {"spec": source.model_dump(mode="json") if source else None}
+
+
+@router.post("/candidates", status_code=202)
+def start_candidate(data: CandidateInput):
+    artifact = db.get_artifact(data.baseline_id)
+    source = db.source_experiment(data.baseline_id)
+    if artifact is None or source is None:
+        raise HTTPException(409, "No executable source. Run your application again and import the candidate evidence.")
+    if artifact.suite_digest != suite_digest(source.cases) or len(artifact.cases) != len(source.cases) or any(case.status != "ok" for case in artifact.cases):
+        raise HTTPException(409, "Select a complete baseline before cloning a candidate")
+    values = source.model_dump(mode="json")
+    values.update(data.model_dump(mode="json", exclude={"baseline_id"}))
+    values["mode"] = "fixture" if data.provider == "costguard-mock" else "live"
+    try:
+        spec = ExperimentSpec.model_validate(values)
+    except ValueError as exc:
+        raise HTTPException(422, "Candidate model must have an entry in its explicit pricing catalog") from exc
+    return {"job_id": db.create_job(spec)}
+
+
+class ProbeInput(Schema):
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    pricing: PricingCatalog
+
+
+@router.post("/probes", status_code=202)
+def probe(data: ProbeInput):
+    from uuid import uuid4
+    try:
+        spec = ExperimentSpec(suite_id=f"probe-{uuid4()}", name="Explicit chat connection probe",
+            provider=data.provider, model=data.model, pricing=data.pricing,
+            system_prompt="Reply briefly to confirm this chat connection.", cases=[{"case_id": "probe", "prompt": "OK"}],
+            limits=ExecutionLimits(max_output_tokens=64, timeout_seconds=30),
+            mode="fixture" if data.provider == "costguard-mock" else "live")
+    except ValueError as exc:
+        raise HTTPException(422, "Supply pricing for the probe model") from exc
+    return {"job_id": db.create_job(spec)}
 
 
 @router.get("/analyst")
@@ -32,6 +103,18 @@ def configure_analyst(settings: AnalystSettings):
 
 @router.post("/demo", status_code=202)
 def start_demo():
+    setup_demo()
+    from .examples import triage_examples
+    example = triage_examples()
+    specs = [ExperimentSpec.model_validate(example["spec"])]
+    specs.append(ExperimentSpec.model_validate({**example["spec"], "name": "Ticket triage longer prompt",
+                                               "system_prompt": example["variants"]["longer"]}))
+    return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
+            "pricing": specs[0].pricing.model_dump(mode="json"), "policy": example["policy"]}
+
+
+@router.post("/demo/setup")
+def setup_demo():
     if os.environ.get("COSTGUARD_DEMO") != "1":
         raise HTTPException(404, "Demo is disabled. Start Compose with COSTGUARD_DEMO=1 and --profile demo.")
     from .bootstrap_gateway import bootstrap
@@ -39,25 +122,17 @@ def start_demo():
         bootstrap()
     except (httpx.HTTPError, RuntimeError) as exc:
         raise HTTPException(503, "Demo gateway setup failed. Check that the demo profile is running.") from exc
-    root = Path(__file__).resolve().parent.parent
-    specs = [ExperimentSpec.model_validate_json((root / "examples" / f"experiment_{name}.json").read_text())
-             for name in ("baseline", "candidate")]
-    if db.get_analyst_settings() is None:
-        db.save_analyst_settings(AnalystSettings(provider="costguard-mock", model="analyst",
-            pricing_version="mock-demo", input_per_million_usd=0, output_per_million_usd=0))
-    return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
-            "pricing": specs[0].pricing.model_dump(mode="json"),
-            "policy": {"max_cost_increase_percent": 10, "min_candidate_quality_score": 1}}
+    return {"status": "ready"}
 
 
 @router.post("/investigations", status_code=202)
 def start_investigation(data: InvestigationInput):
-    settings = db.get_analyst_settings()
-    if settings is None:
-        raise HTTPException(409, "Configure an analyst model on Connections first")
     saved = db.get_comparison(data.report_id)
     if saved is None:
         raise HTTPException(404, "comparison not found")
+    settings = analyst_for_report(saved)
+    if settings is None:
+        raise HTTPException(409, "Configure an analyst model on Connections first")
     source = db.source_experiment(saved["request"]["candidate_id"])
     artifact = db.get_artifact(saved["request"]["candidate_id"])
     if source and ({case.case_id for case in source.cases} != {case.case_id for case in artifact.cases}
@@ -87,10 +162,14 @@ def stop_investigation(investigation_id: str):
     return {"state": "cancelled"}
 
 
+class ProposalApproval(Schema):
+    system_prompt: str | None = Field(default=None, min_length=1, max_length=8000)
+
+
 @router.post("/investigations/{investigation_id}/run-proposal")
-def run_proposal(investigation_id: str):
+def run_proposal(investigation_id: str, data: ProposalApproval | None = None):
     try:
-        return {"job_id": db.run_investigation_proposal(investigation_id)}
+        return {"job_id": db.run_investigation_proposal(investigation_id, data.system_prompt if data else None)}
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
@@ -98,7 +177,9 @@ def run_proposal(investigation_id: str):
 @router.post("/investigations/{investigation_id}/compare-proposal")
 def compare_proposal(investigation_id: str):
     try:
-        return {"report_id": db.compare_investigation_proposal(investigation_id)}
+        report_id = db.compare_investigation_proposal(investigation_id)
+        return {"report_id": report_id, "candidate_report_id":
+                db.get_investigation(investigation_id)["result"].get("candidate_comparison_id")}
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
@@ -251,6 +332,23 @@ def comparison(report_id: str):
     if result is None:
         raise HTTPException(404, "comparison not found")
     return result
+
+
+@router.get("/comparisons/{report_id}/export")
+def export_report(report_id: str, format: str = "json"):
+    saved = db.get_comparison(report_id)
+    if saved is None:
+        raise HTTPException(404, "comparison not found")
+    if format == "markdown":
+        from .reporting import comparison_markdown
+        return Response(comparison_markdown(saved), media_type="text/markdown",
+                        headers={"Content-Disposition": f'attachment; filename="costguard-{report_id}.md"'})
+    if format != "json":
+        raise HTTPException(422, "Choose json or markdown")
+    bundle = {"comparison": saved, "baseline": db.get_artifact(saved["request"]["baseline_id"]).model_dump(mode="json"),
+              "candidate": db.get_artifact(saved["request"]["candidate_id"]).model_dump(mode="json")}
+    return Response(json.dumps(bundle, indent=2), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="costguard-{report_id}.json"'})
 
 
 @router.post("/scenarios")

@@ -1,6 +1,6 @@
 # CostGuard
 
-CostGuard is a local prototype for model-led economic investigation and pre-deployment regression testing of AI workloads. An analyst model can inspect saved comparisons and cases, propose a prompt experiment, and help you measure its outcome. The economic engine compares observed cost, latency, quality and execution behavior and applies explicit policies.
+CostGuard is a single-user, local-first prototype for pre-deployment economic regression testing of AI workloads. Run or import paired workload evidence, compare cost and declared task quality, investigate with an analyst model, and explicitly approve an experiment to measure an alternative. Deterministic accounting and policies remain authoritative; the analyst supplies interpretations and proposals.
 
 For the intended product direction beyond this prototype, see [VISION.md](VISION.md).
 
@@ -12,11 +12,13 @@ Requires Docker Compose. All published ports bind to localhost. Before adding re
 COSTGUARD_DEMO=1 docker compose --profile demo up -d --build --wait
 ```
 
-Open [CostGuard](http://localhost:8000) and click **Create demo comparison**. CostGuard registers its mock provider, runs paired cases, and opens the report. Click **Investigate this comparison**, then start the investigation. Review the findings and proposal, click **Run proposed experiment**, and compare the completed result against the original baseline. If an analyst was already configured, the demo preserves it: check the displayed analyst before starting an investigation.
+Open [CostGuard](http://localhost:8000) and click **Create demo comparison**, or use **Workbench** to run the steps yourself. The ticket-triage fixture has ten cases, including four validation cases. The longer prompt increases observed mock cost while keeping its declared task checks unchanged. In Workbench, also try the **Cheap incorrect prompt**: it reduces cost but fails quality. Reports show paired outputs, evaluator checks, configuration changes, cost components, and the policy result.
 
-The mock workload and scripted mock analyst require no paid model or downloaded Ollama model. The analyst exercises the integration; it does not demonstrate real model reasoning. Bifrost is available at [localhost:8080](http://localhost:8080). Its setup token is `costguard-local-setup-change-me` unless changed in `.env`. Finish Bifrost's admin setup before adding real keys; its dashboard/API are unprotected until an admin account exists. The browser demo setup action is only available when `COSTGUARD_DEMO=1`.
+Click **Investigate this comparison**, start the investigation, review or edit its proposed prompt, then **Run proposed experiment**. Compare the measured outcome against both the original baseline and the previous candidate. Fixture investigations always use the free scripted analyst and do not overwrite or inherit a configured real analyst. Starting runs/probes/investigations on real models is explicit and can incur charges.
 
-To run the bundled baseline and candidate from a terminal:
+The mock provider uses deterministic responses and word-based synthetic usage, with explicitly synthetic prices. This verifies the workflow, not real intelligence, actual billing, or broad task quality. No paid model or downloaded Ollama model is needed. Bifrost is available at [localhost:8080](http://localhost:8080). Its setup token is `costguard-local-setup-change-me` unless changed in `.env`. Finish Bifrost's admin setup before adding real keys; its dashboard/API are unprotected until an admin account exists. Demo setup is only available with `COSTGUARD_DEMO=1`.
+
+The original three-case echo examples remain available for smoke checks:
 
 ```bash
 docker compose --profile demo exec -T app python -m costguard.bootstrap_gateway
@@ -24,11 +26,13 @@ docker compose --profile demo exec -T app python -m costguard run examples/exper
 docker compose --profile demo exec -T app python -m costguard run examples/experiment_candidate.json --wait
 ```
 
-Copy their artifact IDs from the output, then select them on the CostGuard **Reports** page. The candidate's longer system prompt costs more on the mock workload, so the default 10% regression policy fails. You can also edit and launch experiments on the **Experiments** page. Start the stack again later without `--build`; PostgreSQL and Bifrost data live in named volumes.
+Start the stack again later without `--build`; PostgreSQL and Bifrost data live in named volumes. A complete walkthrough is in [docs/PROTOTYPE.md](docs/PROTOTYPE.md).
 
 ## Using your own model
 
-Start `--profile gateway` for cloud or other OpenAI-compatible providers, or `--profile local` to also start Ollama. Configure provider URL, API key, and models in Bifrost's UI, then use its `provider/model` pair in an experiment specification. For a provider on your private network, Bifrost requires an explicit private-network allowance in its provider settings. CostGuard never stores provider keys in experiment artifacts. Pricing is supplied as a versioned catalog in the experiment or comparison request; Bifrost's routing does not silently determine comparison prices.
+Start `--profile gateway` for cloud or other OpenAI-compatible providers, or `--profile local` to also start Ollama. Configure provider URL, API key, and models in Bifrost's UI, then select its `provider/model` pair in Workbench. Supply real prices; synthetic fixture prices must not be used as actual billing estimates. Changing the model clears the browser's pricing fields. Connections offers an explicit, recorded one-call chat probe; it does not prove tool-calling support. For a provider on your private network, Bifrost requires an explicit private-network allowance in its provider settings. CostGuard never stores provider keys in experiment artifacts.
+
+Workbench clones the baseline's inputs, expectations, and validation partitions into the candidate. Prompts, models, output limits, and temperature may change. Both executions are compared on one explicit pricing snapshot. The case-manifest fingerprint establishes identical declared test inputs, not the authenticity of an imported trace.
 
 The browser/API is at `localhost:8000`, Bifrost at `localhost:8080`, and API docs at `localhost:8000/docs`. The stack has an app, a sequential job runner, PostgreSQL, and Bifrost; Ollama and the mock provider are profile-specific. The app runs its database migration on startup.
 
@@ -37,20 +41,23 @@ The browser/API is at `localhost:8000`, Bifrost at `localhost:8080`, and API doc
 1. Configure a local or cloud model in Bifrost with chat tool-calling support.
 2. On **Connections**, enter its `provider/model` ID, explicit input/output prices, a pricing version, and investigation limits. These settings are separate from the workload model and are snapshotted for each investigation. Provider credentials remain in Bifrost. If inference requires a Bifrost virtual key, set `BIFROST_VIRTUAL_KEY` in `.env` and recreate the app and runner.
 3. On **Investigations**, select a comparison and ask a question. The runner executes a bounded tool loop: inspect comparison, inspect cases, optionally propose one prompt experiment, and return findings with references to inspected evidence.
-4. Review and explicitly run a proposal. CostGuard preserves the source case suite, workload model, pricing and execution limits. It queues the proposal once, then compares its measured result to the original baseline and policy. You can start another investigation on that result.
+4. Review or edit the proposed prompt and explicitly run it. CostGuard preserves the source case suite, workload model, pricing and execution limits. It queues the approved proposal once, then compares its measured result to the original baseline/policy and to the previous candidate. You can start another investigation on the outcome.
 
-The analyst receives selected report/configuration data and available case inputs requested through its tools. Findings are model interpretations; validated evidence references do not prove every claim is correct. Numerical policy results remain computed by the economic engine. Model calls and analyst spend are recorded separately, with no automatic retry or replay after a lost lease. Spend thresholds are checked between calls, not guaranteed caps on in-flight charges. Missing analyst usage stops the loop with unknown cost. A cancelled investigation stops further calls after the current request.
+The analyst receives report/configuration data and exploration-case evidence requested through its tools. Validation inputs/outputs are withheld from the analyst, but available to you and executed by the workload model. Findings are model interpretations; validated references do not prove every claim is correct. Analyst spend is recorded separately, with no automatic retry or replay after a lost lease. Thresholds are checked between calls, not guaranteed caps on in-flight charges. Missing usage or a reported analyst-model mismatch stops the loop with unknown cost. Cancellation stops further calls after the current request.
 
 Investigations, settings and measured outcomes are persisted in PostgreSQL. The API exposes `/api/v1/analyst` and `/api/v1/investigations`; MCP can list/read investigations without initiating paid calls. Imported artifacts can be investigated, but an executable proposal requires the candidate's original CostGuard job specification.
 
 ## Evidence and decisions
 
-- Versioned JSON execution artifacts contain case IDs, model calls, usage provenance, latency, steps, optional quality scores, and optional non-model charges. They can be imported through `POST /api/v1/artifacts` or `python -m costguard import <file>`.
-- `costguard.hook.ArtifactRecorder` is an opt-in Python hook for existing applications: wrap each case, record actual OpenAI-compatible responses plus tool/retrieval steps and optional quality, then export `recorder.artifact().model_dump_json()`. It does not intercept SDK calls automatically.
-- Experiments support prompt/model changes and a bounded word-count tool example. Each run has case, time, retry, step, tool, output-token, and optional spend limits. The runner does not replay paid calls after a lost job lease.
-- Reports compare matched cases on one supplied pricing catalog, attribute model and case cost changes, show mean and p95 cost/latency, model calls, retries, tool/agent steps, exact-match quality where available, and optional monthly projection. Missing usage or failed cases produce an inconclusive economic result instead of a false pass.
+- Version 2 artifacts include the full case manifest, fingerprint, captured outputs, reported model, finish status, evaluator checks, usage provenance, latency, steps and optional non-model charges. Import through Workbench, `POST /api/v1/artifacts`, or `python -m costguard import <file>`. Legacy v1 imports remain readable, but missing manifest identity cannot prove a policy pass.
+- `costguard.hook.ArtifactRecorder` is an opt-in Python hook, not automatic SDK interception. Provide `suite_cases` to produce comparable v2 evidence. [examples/record_application.py](examples/record_application.py) instruments a small application independently of CostGuard's job runner.
+- Experiments support prompt/model changes and a bounded word-count tool example. Workload receipts are checkpointed before/after calls; partial evidence survives an expired lease. Unknown usage stops further calls. Ambiguous failures are not retried, including legacy specs with `max_attempts > 1`.
+- Reports compare matched cases on one supplied pricing catalog, show model/case deltas, additive input/output/non-model cost attribution, an overlapping retry subset, mean and p95 cost/latency, behavior, and monthly projection. Missing usage, incomplete suites, changed inputs, reported-model mismatches, and failed/truncated cases prevent a verified comparison. Gateway-internal routing/retries are not captured; prices reflect the requested model only when its reported identity is compatible.
+- Built-in quality checks are versioned exact-text matching or a JSON object with exactly the expected fields/values. Full compatible paired coverage is required for a quality gate; validation-partition quality is also checked when present. These checks and a small sample are not a general semantic evaluation or statistical confidence claim.
+- Download a JSON evidence bundle (including both artifacts and comparison settings) or a Markdown decision summary from a report. Bundles contain workload inputs/outputs: review sensitive content before sharing.
 - Policies can gate cost per request, regression percentage, projected monthly cost, latency, quality, retries, steps, and model usage. A hypothetical repricing scenario holds observed execution behavior fixed; it is not a prediction of model quality or routing behavior.
 - `python -m costguard gate --baseline <artifact.json> --candidate <artifact.json> --pricing <pricing.json> --policy <policy.json>` exits 0 for pass, 1 for fail, and 2 for inconclusive/error. `--json-output` and `--markdown-output` export reports for CI.
+- [examples/workload-gate.yaml](examples/workload-gate.yaml) is a template for gating changes in another application's CI. That application must produce paired artifacts first. The gate itself needs no database, gateway, or paid calls.
 - `python -m costguard.mcp_server` exposes read-only MCP queries for saved workload economics and comparisons. It does not initiate paid executions.
 
 The original stateless `POST /compare` endpoint remains available, including `examples/comparison.json`.
@@ -66,4 +73,4 @@ GitHub Actions runs both checks against the demo stack. Tests use generated case
 
 ## Prototype boundaries
 
-This is a single-user, local-first prototype. It does not yet capture production traces, model routing probabilities, weighted traffic, automatic application instrumentation, RAG behavior, or quality beyond explicit case evaluators. It does not guarantee a spending cap for an in-flight call; the runner checks its spend threshold between cases. Gateway administration and provider credentials stay in Bifrost, while CostGuard owns the experiment evidence and economic decisions. Do not expose this stack publicly without adding authentication, TLS, and secret management.
+This is a single-user, local-first prototype. It does not automatically capture production traces, model routing probabilities, weighted traffic, RAG behavior, or quality beyond explicit case evaluators. Each run is one observation per case; repeat experiments manually to examine variability, and do not treat measured latency as a controlled benchmark. Reported model aliases/version names that differ from the pricing identity are conservatively inconclusive. There is no guaranteed cap on an in-flight charge. Gateway administration/credentials stay in Bifrost. Workload inputs/outputs are saved locally; redact sensitive data before capture. Do not expose the stack publicly without authentication, TLS, and secret management. Real local/cloud model reasoning and outcomes must be verified with your chosen model; the automated demo checks use mock inference only.

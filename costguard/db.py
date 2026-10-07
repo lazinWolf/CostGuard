@@ -65,6 +65,7 @@ class JobRow(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     state: Mapped[str] = mapped_column(String(24), index=True)
     spec: Mapped[dict] = mapped_column(JSONB)
+    checkpoint: Mapped[dict] = mapped_column(JSONB, default=dict)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     total: Mapped[int] = mapped_column(Integer)
     artifact_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("artifacts.id"), nullable=True)
@@ -119,7 +120,11 @@ def import_artifact(artifact: ExecutionArtifact) -> tuple[str, bool]:
         existing = session.get(ArtifactRow, artifact_id)
         if existing:
             if existing.digest != digest:
-                raise ValueError("artifact_id already exists with different content")
+                # New optional schema fields must not make an unchanged historical
+                # artifact conflict with itself when it is exported and re-imported.
+                normalized = _json(ExecutionArtifact.model_validate(existing.payload))
+                if normalized != payload:
+                    raise ValueError("artifact_id already exists with different content")
             return artifact_id, False
         session.add(ArtifactRow(
             id=artifact_id,
@@ -169,6 +174,12 @@ def set_baseline(suite_id: str, artifact_id: str) -> None:
     artifact = get_artifact(artifact_id)
     if artifact is None or artifact.suite_id != suite_id:
         raise ValueError("baseline artifact must exist in the selected suite")
+    if (artifact.suite_cases is None or len(artifact.cases) != len(artifact.suite_cases)
+            or any(case.status != "ok" or not case.calls for case in artifact.cases)
+            or any(call.usage_source != "gateway" and call.usage_source != "provider"
+                   for case in artifact.cases for call in case.calls)
+            or any(call.status != "ok" for case in artifact.cases for call in case.calls)):
+        raise ValueError("baseline requires a complete case manifest and observed successful execution")
     with session_scope() as session:
         row = session.get(BaselineRow, suite_id)
         if row is None:
@@ -222,24 +233,29 @@ def get_job(job_id: str) -> dict | None:
         return _job_view(row) if row else None
 
 
-def _job_view(row: JobRow) -> dict:
-    return {"id": row.id, "state": row.state, "progress": row.progress, "total": row.total,
-            "artifact_id": row.artifact_id, "error": row.error}
+def _job_view(row: JobRow, include_checkpoint=True) -> dict:
+    result = {"id": row.id, "state": row.state, "progress": row.progress, "total": row.total,
+              "artifact_id": row.artifact_id, "error": row.error}
+    if include_checkpoint:
+        result["checkpoint"] = row.checkpoint or {}
+    return result
 
 
 def list_jobs() -> list[dict]:
     with session_scope() as session:
         rows = session.scalars(select(JobRow).order_by(JobRow.created_at.desc())).all()
-        return [_job_view(row) for row in rows]
+        return [_job_view(row, include_checkpoint=False) for row in rows]
 
 
 def claim_job() -> tuple[str, ExperimentSpec] | None:
     now = datetime.now(timezone.utc)
     with session_scope() as session:
-        expired = session.scalars(select(JobRow).where(JobRow.state == "running", JobRow.lease_until < now)).all()
+        expired = session.scalars(select(JobRow).where(JobRow.state == "running", JobRow.lease_until < now)
+                                  .with_for_update(skip_locked=True)).all()
         for row in expired:
             row.state = "interrupted"
             row.error = "Runner lease expired; paid calls are not replayed automatically"
+            _persist_checkpoint(session, row)
         row = session.scalars(
             select(JobRow).where(JobRow.state == "queued")
             .order_by(JobRow.created_at).with_for_update(skip_locked=True).limit(1)
@@ -276,6 +292,44 @@ def cancel_job(job_id: str) -> bool:
             return False
         row.state = "cancelled"
         return True
+
+
+def checkpoint_job(job_id: str, artifact: ExecutionArtifact, progress: int) -> bool:
+    """Persist before and after each network call; never replay an in-flight receipt."""
+    with session_scope() as session:
+        row = session.get(JobRow, job_id, with_for_update=True)
+        if row is None or row.state not in {"running", "cancelled"}:
+            return False
+        row.checkpoint = _json(artifact)
+        row.progress = progress
+        return True
+
+
+def _persist_checkpoint(session, row):
+    if not row.checkpoint or row.artifact_id:
+        return
+    artifact = ExecutionArtifact.model_validate(row.checkpoint)
+    payload = _json(artifact)
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    session.add(ArtifactRow(id=str(artifact.artifact_id), suite_id=artifact.suite_id, name=artifact.name,
+                           digest=hashlib.sha256(raw.encode()).hexdigest(), payload=payload))
+    row.artifact_id = str(artifact.artifact_id)
+
+
+def finalize_job(job_id: str, state: str, error: str | None = None) -> None:
+    with session_scope() as session:
+        row = session.get(JobRow, job_id, with_for_update=True)
+        if row is None:
+            return
+        _persist_checkpoint(session, row)
+        if row.state == "running":
+            row.state, row.error = state, error
+
+
+def get_job_spec(job_id: str) -> ExperimentSpec | None:
+    with session_scope() as session:
+        row = session.get(JobRow, job_id)
+        return ExperimentSpec.model_validate(row.spec) if row else None
 
 
 def get_analyst_settings() -> dict | None:
@@ -372,17 +426,23 @@ def cancel_investigation(investigation_id: str) -> bool:
         return True
 
 
-def run_investigation_proposal(investigation_id: str) -> str:
+def run_investigation_proposal(investigation_id: str, system_prompt: str | None = None) -> str:
     """The explicit execution action is idempotent to avoid duplicate paid jobs."""
     with session_scope() as session:
         row = session.get(InvestigationRow, investigation_id, with_for_update=True)
         if row is None:
             raise ValueError("investigation not found")
         if row.proposal_job_id:
+            if system_prompt is not None and session.get(JobRow, row.proposal_job_id).spec["system_prompt"] != system_prompt:
+                raise ValueError("Proposal was already approved with a different prompt")
             return row.proposal_job_id
         if row.state != "completed" or not row.result.get("proposal"):
             raise ValueError("completed investigation has no executable proposal")
         spec = ExperimentSpec.model_validate(row.result["proposal"]["spec"])
+        if system_prompt is not None:
+            spec = ExperimentSpec.model_validate({**spec.model_dump(mode="json"), "system_prompt": system_prompt})
+        row.result = {**row.result, "approval": {"system_prompt": spec.system_prompt,
+            "edited": spec.system_prompt != row.result["proposal"]["spec"]["system_prompt"]}}
         job_id = str(uuid4())
         session.add(JobRow(id=job_id, state="queued", spec=_json(spec), total=len(spec.cases)))
         session.flush()
@@ -416,4 +476,13 @@ def compare_investigation_proposal(investigation_id: str) -> str:
             candidate_id=job.artifact_id, request_payload=request, report=_json(report)))
         session.flush()
         row.proposal_report_id = report_id
+        previous = ExecutionArtifact.model_validate(session.get(ArtifactRow, original.candidate_id).payload)
+        second = compare_artifacts(previous, right, PricingCatalog.model_validate(request["pricing"]),
+            ComparisonPolicy.model_validate(request["policy"]) if request.get("policy") else None,
+            request.get("monthly_requests"))
+        candidate_report_id = str(uuid4())
+        session.add(ComparisonRow(id=candidate_report_id, baseline_id=original.candidate_id,
+            candidate_id=job.artifact_id, request_payload={**request, "baseline_id": original.candidate_id},
+            report=_json(second)))
+        row.result = {**row.result, "candidate_comparison_id": candidate_report_id}
         return report_id

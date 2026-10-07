@@ -9,7 +9,7 @@ app = FastAPI(title="CostGuard mock provider")
 
 @app.get("/v1/models")
 def models():
-    return {"object": "list", "data": [{"id": model, "object": "model"} for model in ("echo", "analyst")]}
+    return {"object": "list", "data": [{"id": model, "object": "model"} for model in ("echo", "analyst", "triage")]}
 
 
 def analyst_message(messages: list) -> dict:
@@ -52,7 +52,7 @@ def completion(body: dict):
                    if m.get("role") == "user"), "")
     if "[fail]" in prompt:
         raise HTTPException(503, "controlled failure")
-    if body.get("model", "").split("/")[-1] == "analyst":
+    if body.get("model", "").split("/")[-1] == "analyst" and body.get("tools"):
         message = analyst_message(messages)
         input_tokens = sum(len(str(m.get("content", "")).split()) for m in messages)
         return {"id": "mock-analyst-completion", "object": "chat.completion", "model": "analyst",
@@ -60,9 +60,24 @@ def completion(body: dict):
                 "usage": {"prompt_tokens": input_tokens, "completion_tokens": 100,
                           "total_tokens": input_tokens + 100}}
     answer = prompt.split("\nWord count:", 1)[0]
+    model = body.get("model", "echo").split("/")[-1]
+    if model == "triage":
+        system = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
+        lower = prompt.casefold()
+        if "always return" in system.casefold():
+            category, priority = "other", "low"
+        elif "general question" in lower:
+            category, priority = "other", "low"
+        else:
+            category = ("billing" if any(word in lower for word in ("charge", "invoice", "refund"))
+                        else "access" if any(word in lower for word in ("login", "password", "account"))
+                        else "bug" if "broken" in lower else "other")
+            priority = ("high" if any(word in lower for word in ("twice", "locked", "blocked", "compromised"))
+                        else "low" if "suggestion" in lower else "normal")
+        answer = json.dumps({"category": category, "priority": priority})
     input_tokens = sum(len(str(m.get("content", "")).split()) for m in messages)
     output_tokens = len(answer.split())
-    return {"id": "mock-completion", "object": "chat.completion", "model": "echo",
+    return {"id": "mock-completion", "object": "chat.completion", "model": model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer},
                          "finish_reason": "stop"}],
             "usage": {"prompt_tokens": input_tokens, "completion_tokens": output_tokens,

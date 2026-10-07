@@ -5,7 +5,7 @@
 {% if analyst and reports %}
 <form class="card" id="investigation-form">
   <label for="report">Comparison to investigate</label>
-  <select id="report" required>{% for report in reports %}<option value="{{report.id}}" {% if report.id == selected_report %}selected{% endif %}>{{report.id[:8]}} · {{report.status}} · {{report.created_at[:10]}}</option>{% endfor %}</select>
+  <select id="report" required onchange="location.href='/investigations?report_id='+this.value">{% for report in reports %}<option value="{{report.id}}" {% if report.id == selected_report %}selected{% endif %}>{{report.id[:8]}} · {{report.status}} · {{report.created_at[:10]}}</option>{% endfor %}</select>
   <label for="question">What do you want to understand or improve?</label>
   <textarea class="question" id="question" required minlength="4" maxlength="2000">Explain the cost change, inspect the cases contributing most, and propose a prompt experiment that could reduce cost while preserving quality.</textarea>
   <p>Analyst: <strong>{{analyst.provider}}/{{analyst.model}}</strong> · up to {{analyst.max_calls}} calls · stop threshold ${{analyst.stop_after_usd}}.</p>

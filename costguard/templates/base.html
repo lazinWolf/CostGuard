@@ -26,9 +26,13 @@
     .metric { font-size: 1.6rem; font-weight: 700; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f6f2; padding: 1rem; border-radius: 8px; }
     .notice { padding: .8rem; border-radius: 7px; margin: 1rem 0; background: #e5efe9; }
     .row { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+    .compact { min-height: 8rem; } .steps { display: flex; flex-wrap: wrap; gap: 1rem; padding: 0; list-style: none; }
+    .steps li { padding: .6rem 1rem; background: #e5efe9; border-radius: 7px; }
+    .secondary { background: #e5efe9; color: #165e4b; } .table-wrap { overflow-x: auto; }
+    [hidden] { display: none !important; } .pill { border-radius: 20px; background: #e5efe9; padding: .2rem .6rem; }
   </style>
 </head>
 <body><header><a href="/"><strong>CostGuard</strong></a><nav>
-  <a href="/">Overview</a><a href="/investigations">Investigations</a><a href="/connections">Connections</a><a href="/experiments">Experiments</a>
+  <a href="/">Overview</a><a href="/workbench">Workbench</a><a href="/investigations">Investigations</a><a href="/connections">Connections</a><a href="/experiments">Advanced runs</a>
   <a href="/reports">Reports</a><a href="/scenarios">Scenarios</a><a href="/docs">API</a>
 </nav></header><main>{% block content %}{% endblock %}</main></body></html>

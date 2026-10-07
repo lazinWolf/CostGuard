@@ -1,4 +1,4 @@
-"""Sequential experiment runner. Network calls are never replayed after a lost lease."""
+"""Sequential runner with durable receipts and no replay of unobserved paid calls."""
 
 import json
 import os
@@ -11,94 +11,86 @@ import httpx
 
 from . import db
 from .economics import case_cost
-from .execution import Call, CaseExecution, ExecutionArtifact, ExperimentSpec, Step
+from .execution import Call, CaseExecution, ExecutionArtifact, ExperimentSpec, Step, evaluate
 from .investigation_worker import execute_investigation, gateway_headers
 
 
-def _quality(answer: str, expected: str | None) -> tuple[Decimal | None, str | None]:
-    if expected is None:
-        return None, None
-    passed = answer.strip().casefold() == expected.strip().casefold()
-    return Decimal("1") if passed else Decimal("0"), "exact:v1"
-
-
 def run_case(spec: ExperimentSpec, case, client: httpx.Client,
-             should_continue=lambda: True) -> CaseExecution:
+             should_continue=lambda: True, checkpoint=lambda case: None) -> CaseExecution:
     started = time.monotonic()
-    calls: list[Call] = []
-    steps: list[Step] = []
-    answer = ""
-    error = None
+    result = CaseExecution(case_id=case.case_id, status="error", latency_ms=0)
     if spec.kind == "tool_loop":
         if spec.limits.max_tool_calls < 1 or spec.limits.max_steps < 2:
-            error = "tool or step limit prevents this workload"
-        else:
-            steps.append(Step(step_id="tool-1", kind="tool", name="word_count",
-                              latency_ms=0, tags={"words": str(len(case.prompt.split()))}))
-    if error is None:
-        text = case.prompt
-        if spec.kind == "tool_loop":
-            text += f"\nWord count: {len(case.prompt.split())}"
-        if not should_continue():
-            error = "cancelled"
-        else:
-            model_step = "model-1"
-            steps.append(Step(step_id=model_step, kind="model", name=spec.model, latency_ms=0))
-            for attempt in range(1, spec.limits.max_attempts + 1):
-                if not should_continue():
-                    error = "cancelled"
-                    break
-                call_started = time.monotonic()
-                usage_source = "missing"
-                input_tokens = output_tokens = None
-                status = "error"
-                try:
-                    response = client.post(
-                        "/v1/chat/completions",
-                        json={"model": f"{spec.provider}/{spec.model}",
-                              "messages": [{"role": "system", "content": spec.system_prompt},
-                                           {"role": "user", "content": text}],
-                              "max_tokens": spec.limits.max_output_tokens,
-                              "stream": False},
-                        timeout=spec.limits.timeout_seconds,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-                    answer = data["choices"][0]["message"]["content"] or ""
-                    usage = data.get("usage")
-                    if usage and isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
-                        input_tokens = usage["prompt_tokens"]
-                        output_tokens = usage["completion_tokens"]
-                        usage_source = "gateway"
-                    status = "ok"
-                    error = None
-                except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-                    error = f"model request failed: {type(exc).__name__}"
-                elapsed = Decimal(str(round((time.monotonic() - call_started) * 1000, 4)))
-                calls.append(Call(
-                    call_id=str(uuid4()), step_id=model_step, provider=spec.provider,
-                    model=spec.model, input_tokens=input_tokens,
-                    output_tokens=output_tokens, usage_source=usage_source,
-                    status=status, latency_ms=elapsed, attempt=attempt,
-                ))
-                if status == "ok":
-                    break
-            steps[-1].latency_ms = sum((call.latency_ms for call in calls), Decimal("0"))
-            steps[-1].status = "ok" if error is None else "error"
-    quality, evaluator = _quality(answer, case.expected_text) if error is None else (None, None)
-    status = "cancelled" if error == "cancelled" else "error" if error else "ok"
-    return CaseExecution(
-        case_id=case.case_id, status=status,
-        latency_ms=Decimal(str(round((time.monotonic() - started) * 1000, 4))),
-        calls=calls, steps=steps, quality_score=quality, evaluator=evaluator,
-        error=error,
-    )
+            result.error = "tool or step limit prevents this workload"
+            checkpoint(result)
+            return result
+        result.steps.append(Step(step_id="tool-1", kind="tool", name="word_count", latency_ms=0,
+                                 tags={"words": str(len(case.prompt.split()))}))
+    text = case.prompt
+    if spec.kind == "tool_loop":
+        text += f"\nWord count: {len(case.prompt.split())}"
+    if not should_continue():
+        result.status, result.error = "cancelled", "cancelled before model call"
+        checkpoint(result)
+        return result
+    result.steps.append(Step(step_id="model-1", kind="model", name=spec.model, latency_ms=0, status="error"))
+    call = Call(call_id=str(uuid4()), step_id="model-1", provider=spec.provider, model=spec.model,
+                usage_source="missing", status="in_flight", latency_ms=0, attempt=1)
+    result.calls.append(call)
+    result.error = "Model call is in flight; usage and charge are unknown"
+    checkpoint(result)
+    payload = {"model": f"{spec.provider}/{spec.model}", "messages": [
+        {"role": "system", "content": spec.system_prompt}, {"role": "user", "content": text}],
+        "max_tokens": spec.limits.max_output_tokens, "stream": False}
+    if spec.temperature is not None:
+        payload["temperature"] = float(spec.temperature)
+    call_started = time.monotonic()
+    try:
+        response = client.post("/v1/chat/completions", json=payload, timeout=spec.limits.timeout_seconds)
+        response.raise_for_status()
+        data = response.json()
+        usage = data.get("usage") or {}
+        if isinstance(usage, dict):
+            counts = usage.get("prompt_tokens"), usage.get("completion_tokens")
+            if all(type(count) is int and count >= 0 for count in counts):
+                call.input_tokens, call.output_tokens = counts
+                call.usage_source = "gateway"
+        call.response_model = data.get("model") if isinstance(data.get("model"), str) else None
+        choice = data["choices"][0]
+        answer = choice["message"]["content"]
+        if not isinstance(answer, str):
+            raise ValueError("model returned no text answer")
+        call.finish_reason = choice.get("finish_reason")
+        call.response_text, call.response_text_truncated = answer[:20000], len(answer) > 20000
+        result.output_text = call.response_text
+        if call.finish_reason not in {"stop", "length"}:
+            raise ValueError("model did not return a normal text completion")
+        if call.finish_reason == "length" or call.response_text_truncated:
+            raise ValueError("output was truncated; increase the output-token limit")
+        call.status = "ok"
+        result.status, result.error = "ok", None
+        result.evaluation = evaluate(answer, case)
+        if result.evaluation:
+            result.quality_score, result.evaluator = result.evaluation.score, result.evaluation.evaluator
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
+        call.status = "error"
+        result.error = ("output was truncated; increase output-token limit" if call.finish_reason == "length"
+                        else f"model request/output failed: {type(exc).__name__}; no automatic retry")
+    call.latency_ms = Decimal(str(round((time.monotonic() - call_started) * 1000, 4)))
+    result.steps[-1].latency_ms = call.latency_ms
+    result.steps[-1].status = "ok" if call.status == "ok" else "error"
+    result.latency_ms = Decimal(str(round((time.monotonic() - started) * 1000, 4)))
+    if not should_continue():
+        result.status, result.error = "cancelled", "cancelled after current call; usage retained"
+    checkpoint(result)
+    return result
 
 
 def execute_job(job_id: str, spec: ExperimentSpec, gateway_url: str | None = None) -> str:
     url = gateway_url or os.environ.get("GATEWAY_URL", "http://bifrost:8080")
-    cases: list[CaseExecution] = []
+    cases = []
     spent = Decimal("0")
+    artifact_id = uuid4()
     heartbeat_stop = threading.Event()
 
     def heartbeat():
@@ -107,53 +99,49 @@ def execute_job(job_id: str, spec: ExperimentSpec, gateway_url: str | None = Non
                 break
             db.update_job(job_id)
 
-    heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
-    heartbeat_thread.start()
+    def save_case(active):
+        artifact = ExecutionArtifact(schema_version=2, artifact_id=artifact_id, suite_id=spec.suite_id,
+            name=spec.name, pricing=spec.pricing, suite_cases=spec.cases, cases=[*cases, active],
+            configuration={"kind": spec.kind, "provider": spec.provider, "model": spec.model,
+                "system_prompt": spec.system_prompt, "limits": spec.limits.model_dump_json(),
+                "mode": spec.mode,
+                "temperature": str(spec.temperature) if spec.temperature is not None else "provider-default"})
+        completed = bool(active.calls and active.calls[-1].status != "in_flight")
+        if not db.checkpoint_job(job_id, artifact, len(cases) + int(completed)):
+            raise RuntimeError("job is no longer eligible for execution")
+
+    thread = threading.Thread(target=heartbeat, daemon=True)
+    thread.start()
+    state, error = "completed", None
     try:
         with httpx.Client(base_url=url, headers=gateway_headers()) as client:
-            for input_case in spec.cases:
-                job = db.get_job(job_id)
-                if job is None or job["state"] == "cancelled":
+            for case_input in spec.cases:
+                if (db.get_job(job_id) or {}).get("state") != "running":
+                    state = "interrupted"
                     break
                 if spec.limits.stop_after_usd is not None and spent >= spec.limits.stop_after_usd:
-                    db.update_job(job_id, state="interrupted", error="configured spend threshold reached")
+                    state, error = "interrupted", "configured spend threshold reached between cases"
                     break
-                db.update_job(job_id, progress=len(cases))
-                case = run_case(spec, input_case, client,
-                                should_continue=lambda: (db.get_job(job_id) or {}).get("state") == "running")
+                case = run_case(spec, case_input, client, checkpoint=save_case,
+                    should_continue=lambda: (db.get_job(job_id) or {}).get("state") == "running")
                 cases.append(case)
                 amount = case_cost(case, spec.pricing)
-                if amount is not None:
-                    spent += amount
-                db.update_job(job_id, progress=len(cases))
-                if amount is None and spec.limits.stop_after_usd is not None:
-                    db.update_job(job_id, state="interrupted",
-                                  error="spend threshold cannot be enforced without usage")
+                if amount is None:
+                    state, error = "interrupted", "Usage or pricing is unknown; stopped before additional calls"
                     break
-                if case.status == "cancelled":
+                spent += amount
+                if case.status != "ok":
+                    state, error = "failed", case.error
                     break
+    except Exception:
+        db.finalize_job(job_id, "failed", "Runner failed; any saved receipts are retained and not replayed")
+        raise
     finally:
         heartbeat_stop.set()
-        heartbeat_thread.join(timeout=1)
-    if not cases:
-        job = db.get_job(job_id)
-        if job and job["state"] == "running":
-            db.update_job(job_id, state="failed", error="no cases completed")
-        return job_id
-    artifact = ExecutionArtifact(
-        artifact_id=uuid4(), suite_id=spec.suite_id, name=spec.name,
-        configuration={"kind": spec.kind, "provider": spec.provider,
-                       "model": spec.model, "system_prompt": spec.system_prompt,
-                       "limits": spec.limits.model_dump_json()},
-        pricing=spec.pricing, cases=cases,
-    )
-    artifact_id, _ = db.import_artifact(artifact)
-    job = db.get_job(job_id)
-    if job and job["state"] == "running":
-        db.update_job(job_id, state="completed" if len(cases) == len(spec.cases) else "interrupted",
-                      progress=len(cases), artifact_id=artifact_id)
-    elif job:
-        db.update_job(job_id, progress=len(cases), artifact_id=artifact_id)
+        thread.join(timeout=1)
+    if not cases and state == "completed":
+        state, error = "failed", "no cases completed"
+    db.finalize_job(job_id, state, error)
     return job_id
 
 
@@ -166,7 +154,7 @@ def work_forever() -> None:
                 try:
                     execute_job(job_id, spec)
                 except Exception as exc:
-                    db.update_job(job_id, state="failed", error=f"runner error: {type(exc).__name__}")
+                    db.finalize_job(job_id, "failed", f"runner error: {type(exc).__name__}")
                 continue
             investigation_id = db.claim_investigation()
             if investigation_id:

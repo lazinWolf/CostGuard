@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% block title %}Comparison workbench · CostGuard{% endblock %}
+{% block content %}
+<h1>Test a workload change</h1>
+<p class="muted">Keep the case suite fixed. Change the workflow, measure the difference, and check your economic constraints.</p>
+<ol class="steps"><li>1 · Baseline</li><li>2 · Candidate</li><li>3 · Compare & investigate</li></ol>
+<p id="message" class="notice" role="status" hidden></p>
+<section class="card"><h2>1. Establish a baseline</h2>
+<label for="saved-baseline">Use an existing run</label><select id="saved-baseline"><option value="">Create or import a baseline</option>{% for artifact in artifacts %}<option value="{{artifact.id}}">{{artifact.name}} · {{artifact.suite_id}} · {{artifact.id[:8]}}</option>{% endfor %}</select>
+<p><label for="baseline-file">Or import your application's baseline artifact</label><input id="baseline-file" type="file" accept=".json,application/json"></p>
+<p class="muted">Artifacts include prompts and outputs: use non-sensitive data or redact before capture. <a href="/docs">API documentation</a> · Integration example: <code>examples/record_application.py</code>.</p>
+<form id="baseline-form">
+<div class="notice">The bundled example uses a deterministic mock and synthetic prices. To measure a real model, configure it in <a href="/connections">Connections</a> and supply your actual pricing here.</div>
+<div class="grid"><div><label for="baseline-name">Run name</label><input id="baseline-name" required value="Ticket triage baseline" maxlength="200"></div><div><label for="baseline-model">Gateway model (provider/model)</label><input id="baseline-model" required value="costguard-mock/triage"></div></div>
+<div class="grid"><div><label for="baseline-price-version">Pricing version</label><input id="baseline-price-version" required value="fixture-not-real-billing"></div><div><label for="baseline-input-price">Input USD / million</label><input id="baseline-input-price" type="number" min="0" step="any" value="10" required></div><div><label for="baseline-output-price">Output USD / million</label><input id="baseline-output-price" type="number" min="0" step="any" value="20" required></div></div>
+<label for="baseline-prompt">Baseline system prompt</label><textarea id="baseline-prompt" class="compact" maxlength="8000" required>{{example.spec.system_prompt}}</textarea>
+<div class="grid"><div><label for="baseline-tokens">Output-token limit / call</label><input id="baseline-tokens" type="number" min="1" max="8192" value="128" required></div><div><label for="baseline-spend">Stop after observed USD</label><input id="baseline-spend" type="number" min="0.000001" step="any" value="0.10" required></div><div><label for="baseline-temperature">Temperature (blank = provider default)</label><input id="baseline-temperature" type="number" min="0" max="2" step="any" value="0"></div></div>
+<p id="suite-summary"></p><label for="suite-file">Load a case suite JSON file (a case list or experiment spec)</label><input id="suite-file" type="file" accept=".json,application/json">
+<details><summary>Inspect or edit case inputs and expectations</summary><label for="suite-id">Suite name</label><input id="suite-id" value="ticket-triage-v1" required><label for="cases">Case list</label><textarea id="cases">{{example.spec.cases|tojson(indent=2)}}</textarea><p class="muted">Exact text or required JSON fields are scored. The validation partition is withheld from analyst evidence tools; all cases still run through the workload model.</p></details>
+<p class="muted">Starting a run makes model calls. Stop thresholds are checked between calls, not hard caps. Unknown usage stops additional calls; ambiguous failures are not retried.</p>
+<button type="submit">Run baseline</button></form>
+<div id="baseline-summary" hidden><p id="baseline-status"></p><p><a id="baseline-evidence">Inspect baseline evidence</a> · <button id="promote" class="secondary">Designate as baseline</button> · <a href="/workbench">Start another comparison</a></p></div>
+</section>
+<section id="candidate-section" class="card" hidden><h2>2. Change the workflow, not the test suite</h2><p id="identity"></p>
+<form id="candidate-form"><div class="grid"><div><label for="candidate-name">Candidate name</label><input id="candidate-name" required value="Candidate" maxlength="200"></div><div><label for="candidate-model">Gateway model (provider/model)</label><input id="candidate-model" required></div></div>
+<label for="variant">Ticket-triage prompt examples</label><select id="variant"><option value="custom">Custom change</option><option value="longer">Longer prompt — test cost regression</option><option value="cheap_wrong">Cheap incorrect prompt — test quality failure</option><option value="baseline">Original example prompt</option></select>
+<label for="candidate-prompt">Candidate system prompt</label><textarea id="candidate-prompt" class="compact" required maxlength="8000"></textarea>
+<div class="grid"><div><label for="candidate-price-version">Comparison pricing version</label><input id="candidate-price-version" required></div><div><label for="candidate-input-price">Candidate input USD / million</label><input id="candidate-input-price" type="number" min="0" step="any" required></div><div><label for="candidate-output-price">Candidate output USD / million</label><input id="candidate-output-price" type="number" min="0" step="any" required></div></div>
+<div class="grid"><div><label for="candidate-tokens">Output-token limit / call</label><input id="candidate-tokens" type="number" min="1" max="8192" required></div><div><label for="candidate-spend">Stop after observed USD</label><input id="candidate-spend" type="number" min="0.000001" step="any" required></div><div><label for="candidate-temperature">Temperature (blank = provider default)</label><input id="candidate-temperature" type="number" min="0" max="2" step="any"></div></div>
+<p class="muted">Both runs are compared on one explicit pricing snapshot. Repricing existing calls is not a prediction of another model's behavior.</p><button type="submit">Run candidate</button></form>
+<label for="candidate-file">Or import candidate evidence from your application</label><input id="candidate-file" type="file" accept=".json,application/json"><p id="candidate-status"></p>
+</section>
+<form id="compare-form" class="card" hidden><h2>3. Apply constraints and compare</h2>
+<div class="grid"><div><label for="regression">Maximum cost increase %</label><input id="regression" type="number" min="0" step="any" value="10" required></div><div><label for="quality">Minimum paired quality (blank = not gated)</label><input id="quality" type="number" min="0" max="1" step="any" value="1"></div><div><label for="monthly">Assumed requests / month</label><input id="monthly" type="number" min="0" step="1" value="100000" required></div></div>
+<div class="grid"><div><label for="latency">Maximum mean latency ms (optional)</label><input id="latency" type="number" min="0" step="any"></div><div><label for="monthly-budget">Maximum monthly USD (optional)</label><input id="monthly-budget" type="number" min="0" step="any"></div></div>
+<p class="muted">Every case has equal weight. Monthly projections assume this suite represents your production workload. Missing or incompatible evidence cannot establish a pass.</p><button type="submit">Compare and check policy</button>
+</form>
+<script id="workbench-data" type="application/json">{{{'example':example,'demoEnabled':demo_enabled}|tojson}}</script>
+<script src="/static/workbench.js" defer></script>
+{% endblock %}

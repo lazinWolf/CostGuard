@@ -21,6 +21,7 @@ def artifact(name: str, tokens: int = 1000, *, source: str = "provider", evaluat
             "usage_source": source, "status": "ok", "latency_ms": 100, "attempt": 1}
     return ExecutionArtifact.model_validate({
         "artifact_id": str(uuid4()), "suite_id": "suite", "name": name,
+        "schema_version": 2, "suite_cases": [{"case_id": "one", "prompt": "hello", "expected_text": "hello"}],
         "pricing": {"version": "test", "entries": [{"provider": "test", "model": "echo",
             "input_per_million_usd": 10, "output_per_million_usd": 20}]},
         "cases": [{"case_id": "one", "status": "ok", "latency_ms": 100,
@@ -91,7 +92,7 @@ class ExecutionTests(unittest.TestCase):
         })
 
         def response(request):
-            return httpx.Response(200, json={"choices": [{"message": {"content": "hello"}}],
+            return httpx.Response(200, json={"choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 1}})
 
         with httpx.Client(base_url="http://test", transport=httpx.MockTransport(response)) as client:

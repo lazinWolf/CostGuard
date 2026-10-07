@@ -14,7 +14,17 @@ from . import db
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.filters["money"] = lambda value: format(Decimal(str(value)), ".8f") if value is not None else "Unknown"
+templates.env.filters["json_data"] = lambda value: value.model_dump(mode="json") if hasattr(value, "model_dump") else value
 root = Path(__file__).resolve().parent.parent
+
+
+@router.get("/workbench", response_class=HTMLResponse)
+def workbench(request: Request):
+    from .examples import triage_examples
+    return templates.TemplateResponse(request, "workbench.html", {
+        "example": triage_examples(), "artifacts": db.list_artifacts(),
+        "demo_enabled": os.environ.get("COSTGUARD_DEMO") == "1",
+    })
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -37,9 +47,14 @@ def connections(request: Request):
 
 @router.get("/investigations", response_class=HTMLResponse)
 def investigations_page(request: Request, report_id: str | None = None):
+    from .api import analyst_for_report
+    reports = db.list_comparisons()
+    report_id = report_id or (reports[0]["id"] if reports else None)
+    selected = db.get_comparison(report_id) if report_id else None
     return templates.TemplateResponse(request, "investigations.html", {
-        "reports": db.list_comparisons(), "selected_report": report_id,
-        "analyst": db.get_analyst_settings(), "investigations": db.list_investigations(),
+        "reports": reports, "selected_report": report_id,
+        "analyst": analyst_for_report(selected) if selected else db.get_analyst_settings(),
+        "investigations": db.list_investigations(),
     })
 
 
@@ -84,7 +99,14 @@ def report_page(request: Request, report_id: str):
     report = db.get_comparison(report_id)
     if report is None:
         raise HTTPException(404, "report not found")
-    return templates.TemplateResponse(request, "report.html", {"saved": report})
+    baseline = db.get_artifact(report["request"]["baseline_id"])
+    candidate = db.get_artifact(report["request"]["candidate_id"])
+    left = {case.case_id: case for case in baseline.cases}
+    right = {case.case_id: case for case in candidate.cases}
+    inputs = {case.case_id: case for case in baseline.suite_cases or []}
+    return templates.TemplateResponse(request, "report.html", {"saved": report, "baseline": baseline,
+        "candidate": candidate, "case_details": [{"id": case_id, "baseline": left.get(case_id),
+            "candidate": right.get(case_id), "input": inputs.get(case_id)} for case_id in sorted(set(left) | set(right))]})
 
 
 @router.get("/artifacts/{artifact_id}", response_class=HTMLResponse)

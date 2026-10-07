@@ -1,0 +1,5 @@
+{
+  "version": "fixture-not-real-billing",
+  "source": "Synthetic demonstration prices; not real provider billing",
+  "entries": [{"provider": "costguard-mock", "model": "triage", "input_per_million_usd": 10, "output_per_million_usd": 20}]
+}

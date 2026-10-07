@@ -24,18 +24,11 @@ def _write(path: str | None, content: str):
 
 
 def _markdown(report) -> str:
-    lines = [f"# CostGuard comparison: {report.status}", ""]
-    if report.economic:
-        cost = report.economic.cost_per_request_usd
-        lines += [f"Cost/request: ${cost.baseline} → ${cost.candidate} ({cost.delta_percent}%)",
-                  f"Mean latency: {report.economic.mean_latency_ms.baseline} → {report.economic.mean_latency_ms.candidate} ms",
-                  f"Quality pairs: {report.economic.quality_cases_compared}", ""]
-    if report.contributors:
-        lines += ["Largest observed increases:"] + [f"- {item}" for item in report.contributors]
-    if report.reasons or report.policy.violations or report.policy.unknowns:
-        lines += ["", "Evidence and policy:"] + [f"- {item}" for item in
-            report.reasons + report.policy.violations + report.policy.unknowns]
-    return "\n".join(lines) + "\n"
+    from .reporting import comparison_markdown
+    return comparison_markdown({"report": report.model_dump(mode="json"), "request": {
+        "pricing": report.pricing_snapshot.model_dump(mode="json") if report.pricing_snapshot else None,
+        "policy": report.policy_snapshot.model_dump(mode="json") if report.policy_snapshot else None,
+        "monthly_requests": report.monthly_requests}})
 
 
 def parser() -> argparse.ArgumentParser:

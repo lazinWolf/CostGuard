@@ -1,0 +1,35 @@
+# Copy into your application's .github/workflows/ and adapt the capture commands.
+# Generate baseline.json and candidate.json using the SAME case manifest and evaluator.
+# The gate itself makes no model calls and needs no CostGuard database or gateway.
+name: AI workload economic gate
+on: [pull_request, workflow_dispatch]
+jobs:
+  economics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out CostGuard's prototype checkpoint
+        uses: actions/checkout@v4
+        with:
+          repository: lazinWolf/CostGuard
+          ref: main # Pin a reviewed commit in your own project.
+          path: costguard-tool
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r costguard-tool/requirements.txt
+      # Your capture job supplies artifacts/baseline.json, artifacts/candidate.json,
+      # artifacts/pricing.json and artifacts/policy.json before this step.
+      - name: Gate the proposed workload
+        working-directory: costguard-tool
+        run: >-
+          python -m costguard gate
+          --baseline ../artifacts/baseline.json --candidate ../artifacts/candidate.json
+          --pricing ../artifacts/pricing.json --policy ../artifacts/policy.json
+          --json-output gate.json --markdown-output gate.md
+      - name: Publish evidence even when the gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: costguard-economic-report
+          path: costguard-tool/gate.*

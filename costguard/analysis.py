@@ -143,6 +143,10 @@ def _policy_result(
         elif candidate_cost * request.monthly_requests > policy.max_monthly_cost_usd:
             violations.append("projected monthly cost exceeds the configured limit")
     if policy.min_candidate_quality_score is not None:
+        baseline_scores = {run.case_id for run in request.baseline.runs if run.quality_score is not None}
+        candidate_scores = {run.case_id for run in request.candidate.runs if run.quality_score is not None}
+        if len(baseline_scores & candidate_scores) < len(request.baseline.runs):
+            unknowns.append("quality policy requires compatible scores for every paired case")
         if quality is None:
             unknowns.append("paired quality scores are required for the quality policy")
         elif quality.candidate < policy.min_candidate_quality_score:

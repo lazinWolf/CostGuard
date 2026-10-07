@@ -40,6 +40,13 @@ class ComparisonDetails(Schema):
     p95_case_cost_usd: MetricComparison | None = None
     p95_latency_ms: MetricComparison | None = None
     contributors: list[str] = Field(default_factory=list)
+    attribution: dict[str, MetricComparison] = Field(default_factory=dict)
+    quality_coverage: Decimal = Decimal("0")
+    partition_results: dict[str, dict] = Field(default_factory=dict)
+    configuration_changes: dict[str, dict] = Field(default_factory=dict)
+    pricing_snapshot: PricingCatalog | None = None
+    policy_snapshot: ComparisonPolicy | None = None
+    monthly_requests: int | None = None
 
 
 def case_cost(case: CaseExecution, prices: PricingCatalog) -> Decimal | None:
@@ -50,6 +57,7 @@ def case_cost(case: CaseExecution, prices: PricingCatalog) -> Decimal | None:
             call.input_tokens is None
             or call.output_tokens is None
             or (call.provider, call.model) not in price_map
+            or (call.response_model is not None and call.response_model not in {call.model, f"{call.provider}/{call.model}"})
         ):
             return None
         total += _call_cost(
@@ -99,6 +107,14 @@ def compare_artifacts(
     monthly_requests: int | None = None,
 ) -> ComparisonDetails:
     reasons: list[str] = []
+    identity_valid = (baseline.suite_digest is not None and baseline.suite_digest == candidate.suite_digest)
+    if not identity_valid:
+        reasons.append("Case manifests are missing or differ; matching IDs alone cannot verify identical test inputs")
+    incomplete = any(artifact.suite_cases is not None and
+                     {case.case_id for case in artifact.cases} != {case.case_id for case in artifact.suite_cases}
+                     for artifact in (baseline, candidate))
+    if incomplete:
+        reasons.append("Execution did not cover the full declared case suite")
     if baseline.suite_id != candidate.suite_id:
         reasons.append("suite_id values differ")
     if {case.case_id for case in baseline.cases} != {case.case_id for case in candidate.cases}:
@@ -116,6 +132,11 @@ def compare_artifacts(
         reasons.append("at least one case has no model calls")
     if estimated:
         reasons.append(f"{estimated} calls use estimated usage")
+    served_mismatch = any(call.response_model is not None and call.response_model not in
+                          {call.model, f"{call.provider}/{call.model}"}
+                          for case in all_cases for call in case.calls)
+    if served_mismatch:
+        reasons.append("Reported model differs from the requested pricing identity; cost cannot be verified")
     unknown_prices = sorted({
         (call.provider, call.model)
         for case in all_cases for call in case.calls
@@ -134,8 +155,12 @@ def compare_artifacts(
         [baseline.suite_id != candidate.suite_id,
          {case.case_id for case in baseline.cases} != {case.case_id for case in candidate.cases},
          missing, failed, estimated, unknown_prices,
-         any(not case.calls for case in all_cases)]
+         any(not case.calls for case in all_cases), incomplete, served_mismatch,
+         bool(baseline.suite_digest and candidate.suite_digest and not identity_valid)]
     )
+    attribution = {}
+    coverage = Decimal("0")
+    partitions = {}
     if comparable:
         economic_policy = policy.model_copy(
             update={field: None for field in BEHAVIOR_LIMITS}
@@ -158,6 +183,27 @@ def compare_artifacts(
             policy=economic_policy,
             monthly_requests=monthly_requests,
         ))
+        coverage = Decimal(economic.quality_cases_compared) / len(baseline.cases)
+        attribution = {
+            component: _compare(_component_cost(baseline, pricing, component),
+                                _component_cost(candidate, pricing, component), Decimal("0.00000001"))
+            for component in ("input", "output", "non_model")
+        }
+        # Retry spend is a subset of input/output spend, not another additive component.
+        attribution["retry_subset"] = _compare(_component_cost(baseline, pricing, "retry"),
+                                               _component_cost(candidate, pricing, "retry"), Decimal("0.00000001"))
+        if identity_valid:
+            for partition in ("exploration", "validation"):
+                ids = {case.case_id for case in baseline.suite_cases if case.partition == partition}
+                if not ids:
+                    continue
+                sub = compare_workloads(ComparisonRequest(
+                    baseline=Workload(name=baseline.name, runs=[run for run in baseline_workload.runs if run.case_id in ids]),
+                    candidate=Workload(name=candidate.name, runs=[run for run in candidate_workload.runs if run.case_id in ids]),
+                    pricing=pricing))
+                partitions[partition] = {"cases": len(ids), "scored_pairs": sub.quality_cases_compared,
+                    "quality": sub.quality_score.model_dump(mode="json") if sub.quality_score else None,
+                    "cost_per_request_usd": sub.cost_per_request_usd.model_dump(mode="json")}
         p95_cost = _compare(_p95(baseline_costs), _p95(candidate_costs), Decimal("0.00000001"))
         p95_latency = _compare(
             _p95([case.latency_ms for case in baseline.cases]),
@@ -181,7 +227,15 @@ def compare_artifacts(
     else:
         violations = list(economic.policy.violations)
         unknowns = list(economic.policy.unknowns)
+        if not identity_valid:
+            unknowns.append(reasons[0])
         if policy is not None:
+            if policy.min_candidate_quality_score is not None and coverage < 1:
+                unknowns.append("Quality policy requires every case to have compatible paired evaluation")
+            validation = partitions.get("validation")
+            if (policy.min_candidate_quality_score is not None and validation and validation["quality"]
+                    and Decimal(str(validation["quality"]["candidate"])) < policy.min_candidate_quality_score):
+                violations.append("candidate validation-partition quality is below the configured minimum")
             for field, (label, getter) in BEHAVIOR_LIMITS.items():
                 limit = getattr(policy, field)
                 if limit is None:
@@ -217,7 +271,31 @@ def compare_artifacts(
         p95_case_cost_usd=p95_cost,
         p95_latency_ms=p95_latency,
         contributors=contributors,
+        attribution=attribution, quality_coverage=coverage, partition_results=partitions,
+        pricing_snapshot=pricing, policy_snapshot=policy, monthly_requests=monthly_requests,
+        configuration_changes={key: {"baseline": baseline.configuration.get(key),
+                                      "candidate": candidate.configuration.get(key)}
+                               for key in sorted(set(baseline.configuration) | set(candidate.configuration))
+                               if baseline.configuration.get(key) != candidate.configuration.get(key)},
     )
+
+
+def _component_cost(artifact: ExecutionArtifact, pricing: PricingCatalog, component: str) -> Decimal:
+    prices = pricing.as_map()
+    total = Decimal("0")
+    for case in artifact.cases:
+        if component == "non_model":
+            total += sum((charge.amount_usd for charge in case.charges), Decimal("0"))
+        for call in case.calls:
+            price = prices[(call.provider, call.model)]
+            if component == "input":
+                total += Decimal(call.input_tokens) * price.input_per_million_usd / 1000000
+            elif component == "output":
+                total += Decimal(call.output_tokens) * price.output_per_million_usd / 1000000
+            elif component == "retry" and call.attempt > 1:
+                total += (Decimal(call.input_tokens) * price.input_per_million_usd
+                          + Decimal(call.output_tokens) * price.output_per_million_usd) / 1000000
+    return total / len(artifact.cases)
 
 
 def _to_workload_run(case: CaseExecution, evaluator: str | None, pricing: PricingCatalog) -> WorkloadRun:

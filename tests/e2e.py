@@ -17,6 +17,7 @@ from mcp.client.stdio import stdio_client
 
 from costguard.bootstrap_gateway import bootstrap
 from costguard import db
+from costguard.execution import ExperimentSpec
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = os.environ.get("COSTGUARD_URL", "http://app:8000")
@@ -57,7 +58,79 @@ async def check_mcp(report_id):
             assert result.content
 
 
-def main():
+def check_workbench(client):
+    """Exercise the real gateway/runner path, including adversarial fixture economics."""
+    example=request(client,"GET","/api/v1/examples/triage")
+    spec=example["spec"]
+    demo=request(client,"POST","/api/v1/demo")
+    baseline_id=completed_job(client,spec,demo["baseline_job_id"])
+    longer_id=completed_job(client,spec,demo["candidate_job_id"])
+    baseline=request(client,"GET",f"/api/v1/artifacts/{baseline_id}")
+    assert baseline["schema_version"]==2 and baseline["suite_digest"]
+    assert all(case["output_text"] and case["evaluation"]["score"]==1 for case in baseline["cases"])
+    source=request(client,"GET",f"/api/v1/artifacts/{baseline_id}/source")["spec"]
+    cloned=request(client,"POST","/api/v1/candidates",json={"baseline_id":baseline_id,
+        "provider":source["provider"],"model":source["model"],"name":"Cheap but wrong triage",
+        "system_prompt":example["variants"]["cheap_wrong"],"pricing":source["pricing"],"limits":source["limits"]})
+    wrong_id=completed_job(client,spec,cloned["job_id"])
+    def compare(candidate_id):
+        return request(client,"POST","/api/v1/comparisons",json={"baseline_id":baseline_id,
+            "candidate_id":candidate_id,"pricing":spec["pricing"],"policy":example["policy"]})
+    longer=compare(longer_id);wrong=compare(wrong_id)
+    assert longer["report"]["status"]==wrong["report"]["status"]=="fail"
+    assert longer["report"]["economic"]["cost_per_request_usd"]["delta"]>0
+    assert wrong["report"]["economic"]["cost_per_request_usd"]["delta"]<0
+    assert wrong["report"]["economic"]["quality_score"]["candidate"]<1
+    assert longer["report"]["partition_results"]["validation"]["scored_pairs"]==4
+    # Fixtures must not call a real analyst even if one is configured globally.
+    request(client,"PUT","/api/v1/analyst",json={"provider":"do-not-call","model":"real",
+        "pricing_version":"test","input_per_million_usd":100,"output_per_million_usd":100})
+    inv=request(client,"POST","/api/v1/investigations",json={"report_id":longer["id"],"question":"Investigate this fixture regression"})["investigation_id"]
+    deadline=time.monotonic()+90
+    while time.monotonic()<deadline:
+        result=request(client,"GET",f"/api/v1/investigations/{inv}")
+        if result["state"]=="completed":break
+        assert result["state"] in {"queued","running"},result
+        time.sleep(.25)
+    else: raise AssertionError("triage fixture investigation did not complete")
+    assert result["request"]["analyst"]["provider"]=="costguard-mock"
+    assert request(client,"GET","/api/v1/analyst")["settings"]["provider"]=="do-not-call"
+    approval={"system_prompt":example["variants"]["baseline"]}
+    path=f"/api/v1/investigations/{inv}"
+    approved=request(client,"POST",path+"/run-proposal",json=approval)["job_id"]
+    assert request(client,"POST",path+"/run-proposal",json=approval)["job_id"]==approved
+    completed_job(client,spec,approved)
+    outcome=request(client,"POST",path+"/compare-proposal")
+    assert outcome["candidate_report_id"]
+    measured=request(client,"GET",f"/api/v1/comparisons/{outcome['report_id']}")
+    assert measured["report"]["status"]=="pass",measured
+    improved=request(client,"GET",f"/api/v1/comparisons/{outcome['candidate_report_id']}")
+    assert improved["report"]["economic"]["cost_per_request_usd"]["delta"]<0
+    bundle=request(client,"GET",f"/api/v1/comparisons/{outcome['report_id']}/export")
+    assert bundle["baseline"]["suite_digest"]==bundle["candidate"]["suite_digest"]
+    exported=client.get(f"/api/v1/comparisons/{outcome['report_id']}/export?format=markdown")
+    exported.raise_for_status();assert "Pricing and policy snapshot" in exported.text
+    # A lost workload worker keeps its in-flight receipt and produces partial evidence.
+    checkpoint=json.loads(json.dumps(baseline));checkpoint["artifact_id"]=str(uuid4())
+    checkpoint["cases"]=checkpoint["cases"][:1]
+    active=checkpoint["cases"][0];active.update(status="error",quality_score=None,evaluator=None,evaluation=None,output_text=None)
+    active["calls"][0].update(status="in_flight",usage_source="missing",input_tokens=None,output_tokens=None,response_text=None,finish_reason=None)
+    stale_id=str(uuid4())
+    with db.session_scope() as session:
+        session.add(db.JobRow(id=stale_id,state="running",spec=spec,total=len(spec["cases"]),checkpoint=checkpoint,
+            lease_until=datetime.now(timezone.utc)-timedelta(seconds=10)))
+    assert db.claim_job() is None
+    stale=request(client,"GET",f"/api/v1/jobs/{stale_id}")
+    assert stale["state"]=="interrupted" and stale["artifact_id"]
+    partial=request(client,"GET",f"/api/v1/artifacts/{stale['artifact_id']}")
+    assert partial["cases"][0]["calls"][0]["status"]=="in_flight"
+    assert client.put(f"/api/v1/baselines/{spec['suite_id']}",json={"artifact_id":stale["artifact_id"]}).status_code==422
+    for page in ("/workbench",f"/workbench?baseline_id={baseline_id}&candidate_id={wrong_id}",f"/reports/{wrong['id']}",f"/investigations/{inv}"):
+        response=client.get(page);response.raise_for_status()
+        assert "<html" in response.text.lower()
+
+
+def _main():
     bootstrap()
     baseline = json.loads((ROOT / "examples/experiment_baseline.json").read_text())
     candidate = json.loads((ROOT / "examples/experiment_candidate.json").read_text())
@@ -66,7 +139,7 @@ def main():
         gateway = request(client, "GET", "/api/v1/gateway")
         assert gateway["status"] == "connected", gateway
         assert request(client, "POST", "/api/v1/suites", json=baseline)["suite_id"] == "demo-suite"
-        demo = request(client, "POST", "/api/v1/demo") if os.environ.get("COSTGUARD_DEMO") == "1" else {}
+        demo = {}
         baseline_id = completed_job(client, baseline, demo.get("baseline_job_id"))
         candidate_id = completed_job(client, candidate, demo.get("candidate_job_id"))
         left = request(client, "GET", f"/api/v1/artifacts/{baseline_id}")
@@ -158,6 +231,8 @@ def main():
             response = client.get(page)
             response.raise_for_status()
             assert "<html" in response.text.lower(), page
+        if os.environ.get("COSTGUARD_DEMO") == "1":
+            check_workbench(client)
 
     asyncio.run(check_mcp(saved["id"]))
 
@@ -179,6 +254,17 @@ def main():
         assert result.returncode == 1, result.stderr
         assert json.loads(output.read_text())["status"] == "fail"
     print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, proposed experiment, UI, CLI, MCP")
+
+
+def main():
+    from costguard.investigation import AnalystSettings
+    original = db.get_analyst_settings()
+    try:
+        _main()
+    finally:
+        restored = original or {"provider":"costguard-mock","model":"analyst","pricing_version":"fixture-free",
+                                "input_per_million_usd":0,"output_per_million_usd":0}
+        db.save_analyst_settings(AnalystSettings.model_validate(restored))
 
 
 if __name__ == "__main__":

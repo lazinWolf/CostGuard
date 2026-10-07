@@ -1,0 +1,4 @@
+{
+  "max_cost_increase_percent": 10,
+  "min_candidate_quality_score": 1
+}

@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from costguard import ComparisonReport, ComparisonRequest, compare_workloads
 from costguard.api import router
@@ -10,6 +12,7 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(web_router)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "costguard/static"), name="static")
 
 
 @app.get("/health")
