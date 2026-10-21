@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, select, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, aliased, defer, mapped_column
 
 from .execution import ExecutionArtifact, ExperimentSpec
 
@@ -17,7 +17,7 @@ from .execution import ExecutionArtifact, ExperimentSpec
 def database_url() -> str:
     return os.environ.get(
         "DATABASE_URL",
-        "postgresql+psycopg://costguard:costguard@localhost:5432/costguard",
+        "postgresql+psycopg://costguard:costguard-local@localhost:55432/costguard",
     )
 
 
@@ -71,6 +71,7 @@ class JobRow(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    cases: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
 
 class SettingRow(Base):
@@ -137,9 +138,11 @@ def get_artifact(artifact_id: str) -> ExecutionArtifact | None:
         return ExecutionArtifact.model_validate(row.payload) if row else None
 
 
-def list_artifacts() -> list[dict]:
+def list_artifacts(limit: int | None = None) -> list[dict]:
     with session_scope() as session:
-        rows = session.scalars(select(ArtifactRow).order_by(ArtifactRow.created_at.desc())).all()
+        rows = session.execute(select(ArtifactRow.id, ArtifactRow.suite_id, ArtifactRow.name,
+                                      ArtifactRow.created_at)
+                               .order_by(ArtifactRow.created_at.desc()).limit(limit)).all()
         return [{"id": r.id, "suite_id": r.suite_id, "name": r.name, "created_at": r.created_at.isoformat()} for r in rows]
 
 
@@ -202,11 +205,23 @@ def get_comparison(report_id: str) -> dict | None:
         return {"id": row.id, "request": row.request_payload, "report": row.report} if row else None
 
 
-def list_comparisons() -> list[dict]:
+def list_comparisons(limit: int | None = None) -> list[dict]:
+    left, right = aliased(ArtifactRow), aliased(ArtifactRow)
     with session_scope() as session:
-        rows = session.scalars(select(ComparisonRow).order_by(ComparisonRow.created_at.desc())).all()
+        rows = session.execute(select(ComparisonRow.id, ComparisonRow.baseline_id,
+                                      ComparisonRow.candidate_id, ComparisonRow.created_at,
+                                      ComparisonRow.report["status"].astext.label("status"),
+                                      ComparisonRow.report["economic"]["cost_per_request_usd"]["delta_percent"]
+                                      .astext.label("cost_change"),
+                                      left.name.label("baseline_name"), right.name.label("candidate_name"),
+                                      right.payload["configuration"]["model"].astext.label("model"))
+                               .join(left, left.id == ComparisonRow.baseline_id)
+                               .join(right, right.id == ComparisonRow.candidate_id)
+                               .order_by(ComparisonRow.created_at.desc()).limit(limit)).all()
         return [{"id": r.id, "baseline_id": r.baseline_id, "candidate_id": r.candidate_id,
-                 "status": r.report.get("status"), "created_at": r.created_at.isoformat()} for r in rows]
+                 "status": r.status, "created_at": r.created_at.isoformat(),
+                 "baseline_name": r.baseline_name, "candidate_name": r.candidate_name,
+                 "model": r.model, "cost_change": r.cost_change} for r in rows]
 
 
 def create_job(spec: ExperimentSpec) -> str:
@@ -217,9 +232,17 @@ def create_job(spec: ExperimentSpec) -> str:
 
 
 def get_job(job_id: str) -> dict | None:
+    """Job state plus what it runs and the cases finished so far."""
     with session_scope() as session:
         row = session.get(JobRow, job_id)
-        return _job_view(row) if row else None
+        if row is None:
+            return None
+        spec = row.spec
+        return {**_job_view(row), "cases": row.cases or [],
+                "name": spec.get("name"), "suite_id": spec.get("suite_id"),
+                "model": f"{spec.get('provider')}/{spec.get('model')}",
+                "system_prompt": spec.get("system_prompt"),
+                "created_at": row.created_at.isoformat()}
 
 
 def _job_view(row: JobRow) -> dict:
@@ -227,9 +250,10 @@ def _job_view(row: JobRow) -> dict:
             "artifact_id": row.artifact_id, "error": row.error}
 
 
-def list_jobs() -> list[dict]:
+def list_jobs(limit: int | None = None) -> list[dict]:
     with session_scope() as session:
-        rows = session.scalars(select(JobRow).order_by(JobRow.created_at.desc())).all()
+        rows = session.scalars(select(JobRow).options(defer(JobRow.spec), defer(JobRow.cases))
+                               .order_by(JobRow.created_at.desc()).limit(limit)).all()
         return [_job_view(row) for row in rows]
 
 
@@ -252,7 +276,8 @@ def claim_job() -> tuple[str, ExperimentSpec] | None:
 
 
 def update_job(job_id: str, *, progress: int | None = None, state: str | None = None,
-               artifact_id: str | None = None, error: str | None = None) -> None:
+               artifact_id: str | None = None, error: str | None = None,
+               cases: list | None = None) -> None:
     with session_scope() as session:
         row = session.get(JobRow, job_id, with_for_update=True)
         if row is None:
@@ -265,6 +290,8 @@ def update_job(job_id: str, *, progress: int | None = None, state: str | None = 
             row.artifact_id = artifact_id
         if error is not None:
             row.error = error
+        if cases is not None:
+            row.cases = cases
         if row.state == "running":
             row.lease_until = datetime.now(timezone.utc) + timedelta(seconds=60)
 
@@ -324,12 +351,27 @@ def get_investigation(investigation_id: str) -> dict | None:
         return _investigation_view(row) if row else None
 
 
-def list_investigations() -> list[dict]:
+def list_investigations(limit: int = 100) -> list[dict]:
     with session_scope() as session:
-        rows = session.scalars(select(InvestigationRow).order_by(InvestigationRow.created_at.desc()).limit(100)).all()
+        rows = session.scalars(select(InvestigationRow).options(defer(InvestigationRow.result))
+                               .order_by(InvestigationRow.created_at.desc()).limit(limit)).all()
         return [{"id": row.id, "report_id": row.report_id, "state": row.state,
                  "question": row.request["question"], "created_at": row.created_at.isoformat()}
                 for row in rows]
+
+
+def related_investigations(report_id: str) -> dict:
+    """Investigations of a report, and the investigation whose proposal produced it."""
+    with session_scope() as session:
+        rows = session.scalars(select(InvestigationRow).options(defer(InvestigationRow.result))
+                               .where(InvestigationRow.report_id == report_id)
+                               .order_by(InvestigationRow.created_at.desc())).all()
+        source = session.scalars(select(InvestigationRow).options(defer(InvestigationRow.result))
+                                 .where(InvestigationRow.proposal_report_id == report_id)).first()
+        view = lambda row: {"id": row.id, "state": row.state, "question": row.request["question"],
+                            "analyst": f"{row.request['analyst']['provider']}/{row.request['analyst']['model']}",
+                            "report_id": row.report_id}
+        return {"investigations": [view(row) for row in rows], "source": view(source) if source else None}
 
 
 def claim_investigation() -> str | None:
@@ -359,7 +401,7 @@ def update_investigation(investigation_id: str, *, result=None, state=None, erro
         if row.state == "running":
             if state is not None:
                 row.state = state
-            row.error = error
+                row.error = error
             row.lease_until = datetime.now(timezone.utc) + timedelta(seconds=180)
 
 

@@ -5,7 +5,7 @@ import json
 from mcp.server import MCPServer
 
 from . import db
-from .economics import compare_artifacts
+from .economics import compare_artifacts, reprice
 from .models import ComparisonPolicy, PricingCatalog
 
 mcp = MCPServer("CostGuard")
@@ -82,9 +82,10 @@ def inspect_hotspots(report_id: str) -> list[str]:
 @mcp.tool()
 def reprice_saved_run(artifact_id: str, pricing: dict, monthly_requests: int) -> dict:
     """Calculate a hypothetical price/traffic scenario without model calls."""
-    from .api import scenario, ScenarioInput
-    result = scenario(ScenarioInput(artifact_id=artifact_id,
-        pricing=PricingCatalog.model_validate(pricing), monthly_requests=monthly_requests))
+    artifact = db.get_artifact(artifact_id)
+    if artifact is None:
+        raise ValueError("run not found")
+    result = reprice(artifact, PricingCatalog.model_validate(pricing), monthly_requests)
     return json.loads(json.dumps(result, default=lambda value: value.model_dump(mode="json")))
 
 

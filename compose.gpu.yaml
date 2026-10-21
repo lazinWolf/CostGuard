@@ -1,0 +1,12 @@
+# Optional NVIDIA GPU for Ollama (--profile local). Requires the NVIDIA Container Toolkit.
+#   docker compose -f compose.yaml -f compose.gpu.yaml --profile local up -d --wait
+# or set COMPOSE_FILE=compose.yaml:compose.gpu.yaml in .env.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

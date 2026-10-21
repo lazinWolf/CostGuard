@@ -4,10 +4,11 @@ import argparse
 import json
 import sys
 import time
+from decimal import Decimal
 from pathlib import Path
 
-from . import db
-from .economics import compare_artifacts
+from . import db, real_demo
+from .economics import ComparisonDetails, compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .models import ComparisonPolicy, PricingCatalog
 
@@ -23,19 +24,95 @@ def _write(path: str | None, content: str):
         print(content)
 
 
+VERDICTS = {"pass": "✅ PASS: within every limit", "fail": "❌ FAIL: blocked by policy",
+            "inconclusive": "⚠️ INCONCLUSIVE: evidence is incomplete", "not_evaluated": "No policy set"}
+
+
+def _plain(value, places: int | None = None) -> str:
+    value = Decimal(value) if places is None else round(Decimal(value), places)
+    return format(value.normalize() if places is None else value, "f")
+
+
+def _change(metric) -> str:
+    if metric.delta_percent is None:
+        return "n/a"
+    return f"{'+' if metric.delta_percent > 0 else ''}{_plain(metric.delta_percent)}%"
+
+
 def _markdown(report) -> str:
-    lines = [f"# CostGuard comparison: {report.status}", ""]
-    if report.economic:
-        cost = report.economic.cost_per_request_usd
-        lines += [f"Cost/request: ${cost.baseline} → ${cost.candidate} ({cost.delta_percent}%)",
-                  f"Mean latency: {report.economic.mean_latency_ms.baseline} → {report.economic.mean_latency_ms.candidate} ms",
-                  f"Quality pairs: {report.economic.quality_cases_compared}", ""]
+    """A CI-friendly summary, e.g. for a GitHub Actions job summary or a PR comment."""
+    economic = report.economic
+    title = f"{economic.candidate} vs {economic.baseline}" if economic else "CostGuard comparison"
+    lines = [f"### {title}", "", f"**{VERDICTS.get(report.status, report.status)}**", ""]
+    if economic:
+        rows = [("Cost per request (USD)", economic.cost_per_request_usd, None),
+                ("Mean latency (ms)", economic.mean_latency_ms, 0)]
+        if economic.monthly_projection:
+            rows.insert(1, (f"Monthly cost at {economic.monthly_projection.requests:,} requests (USD)",
+                            economic.monthly_projection.cost_usd, 2))
+        if economic.quality_score:
+            rows.append((f"Quality ({economic.quality_cases_compared} paired cases)", economic.quality_score, None))
+        lines += ["| Metric | Baseline | Candidate | Change |", "| --- | ---: | ---: | ---: |"]
+        lines += [f"| {name} | {_plain(metric.baseline, places)} | {_plain(metric.candidate, places)} | {_change(metric)} |"
+                  for name, metric, places in rows]
+        lines += ["", f"Priced with `{economic.pricing_version}` on {economic.cases_compared} matched cases.", ""]
     if report.contributors:
-        lines += ["Largest observed increases:"] + [f"- {item}" for item in report.contributors]
+        lines += ["Largest observed increases:"] + [f"- {item}" for item in report.contributors] + [""]
     if report.reasons or report.policy.violations or report.policy.unknowns:
-        lines += ["", "Evidence and policy:"] + [f"- {item}" for item in
-            report.reasons + report.policy.violations + report.policy.unknowns]
-    return "\n".join(lines) + "\n"
+        lines += ["Evidence and policy:"] + [f"- {item}" for item in
+            dict.fromkeys(report.reasons + report.policy.violations + report.policy.unknowns)]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _wait(getter, item_id: str, label: str) -> dict:
+    shown = None
+    while True:
+        item = getter(item_id)
+        line = f"{label}: {item['state']}" + (f" {item['progress']}/{item['total']}" if "total" in item else "")
+        if line != shown:
+            print(line, file=sys.stderr, flush=True)
+            shown = line
+        if item["state"] not in {"queued", "running"}:
+            return item
+        time.sleep(2)
+
+
+def _demo(args) -> int:
+    from .api import ComparisonInput, InvestigationInput, compare_saved, start_investigation
+    reference = real_demo.suite()["reference_pricing"]
+    started = real_demo.start(real_demo.RealDemoInput(
+        model=args.model,
+        input_per_million_usd=(reference["input_per_million_usd"] if args.input_price is None
+                               else args.input_price),
+        output_per_million_usd=(reference["output_per_million_usd"] if args.output_price is None
+                                else args.output_price),
+        configure_analyst=not args.keep_analyst,
+    ))
+    artifacts = {}
+    for side in ("baseline", "candidate"):
+        job = _wait(db.get_job, started[f"{side}_job_id"], f"{side} run")
+        if job["state"] != "completed":
+            raise ValueError(f"{side} run ended {job['state']}: {job['error']}")
+        artifacts[side] = job["artifact_id"]
+    saved = compare_saved(ComparisonInput(
+        baseline_id=artifacts["baseline"], candidate_id=artifacts["candidate"],
+        pricing=started["pricing"], policy=started["policy"],
+        monthly_requests=started["monthly_requests"]))
+    print(_markdown(ComparisonDetails.model_validate(saved["report"])))
+    print(f"Report: http://localhost:8000/reports/{saved['id']}", flush=True)
+    if args.investigate:
+        investigation_id = start_investigation(InvestigationInput(
+            report_id=saved["id"], question=args.question))["investigation_id"]
+        result = _wait(db.get_investigation, investigation_id, "investigation")
+        conclusion = result["result"].get("conclusion")
+        if conclusion:
+            print(f"\n## Analyst findings\n\n{conclusion['summary']}")
+            for finding in conclusion["findings"]:
+                print(f"- {finding['text']} [{', '.join(finding['evidence'])}]")
+        else:
+            print(f"\nInvestigation {result['state']}: {result['error']}")
+        print(f"Investigation: http://localhost:8000/investigations/{investigation_id}")
+    return 0
 
 
 def parser() -> argparse.ArgumentParser:
@@ -60,6 +137,17 @@ def parser() -> argparse.ArgumentParser:
     report = sub.add_parser("report", help="Export a saved comparison report")
     report.add_argument("report_id")
     report.add_argument("--json-output")
+    demo = sub.add_parser("demo", help="Run the support-triage demo on a real gateway model")
+    demo.add_argument("--model", required=True,
+                      help="gateway provider/model ID, e.g. ollama/llama3.2:3b-instruct-q4_K_M")
+    demo.add_argument("--input-price", type=Decimal, help="USD per million input tokens")
+    demo.add_argument("--output-price", type=Decimal, help="USD per million output tokens")
+    demo.add_argument("--keep-analyst", action="store_true",
+                      help="keep the configured analyst instead of using this model")
+    demo.add_argument("--investigate", action="store_true",
+                      help="also ask the analyst to investigate the comparison")
+    demo.add_argument("--question", default="Explain the cost and quality change, inspect the cases "
+                      "that changed most, and propose a prompt experiment that restores quality at lower cost.")
     scenario = sub.add_parser("scenario", help="Reprice a saved artifact")
     scenario.add_argument("artifact_id")
     scenario.add_argument("--pricing", required=True)
@@ -106,11 +194,14 @@ def main(argv=None) -> int:
             if result is None:
                 raise ValueError("report not found")
             _write(args.json_output, json.dumps(result, indent=2))
+        elif args.command == "demo":
+            return _demo(args)
         elif args.command == "scenario":
-            from .api import scenario, ScenarioInput
-            result = scenario(ScenarioInput(artifact_id=args.artifact_id,
-                pricing=PricingCatalog.model_validate(_read(args.pricing)),
-                monthly_requests=args.monthly_requests))
+            artifact = db.get_artifact(args.artifact_id)
+            if artifact is None:
+                raise ValueError("artifact not found")
+            result = reprice(artifact, PricingCatalog.model_validate(_read(args.pricing)),
+                             args.monthly_requests)
             print(json.dumps(result, default=lambda value: value.model_dump(mode="json")))
     except Exception as exc:
         print(f"CostGuard: {exc}", file=sys.stderr)

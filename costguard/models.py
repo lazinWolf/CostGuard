@@ -1,15 +1,19 @@
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
 class Schema(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         str_strip_whitespace=True,
-        json_encoders={Decimal: float},
     )
+
+    @field_serializer("*", mode="wrap", when_used="json")
+    def _fixed_point(self, value, handler):
+        # Exact fixed-point strings: "0.00000000", never floats or "0E-8".
+        return format(value, "f") if isinstance(value, Decimal) else handler(value)
 
 
 class ModelPrice(Schema):
@@ -75,6 +79,9 @@ class ComparisonPolicy(Schema):
     max_candidate_cost_per_request_usd: Decimal | None = Field(default=None, ge=0)
     max_monthly_cost_usd: Decimal | None = Field(default=None, ge=0)
     min_candidate_quality_score: Decimal | None = Field(default=None, ge=0, le=1)
+    # Regression form of the quality policy: how far the candidate may score below the
+    # baseline on the same cases (0 means no worse than the baseline).
+    max_quality_drop: Decimal | None = Field(default=None, ge=0, le=1)
     max_candidate_mean_latency_ms: Decimal | None = Field(default=None, ge=0)
     max_candidate_model_calls_per_case: Decimal | None = Field(default=None, ge=0)
     max_candidate_retries_per_case: Decimal | None = Field(default=None, ge=0)

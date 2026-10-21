@@ -6,7 +6,8 @@ import httpx
 
 from costguard.economics import compare_artifacts
 from costguard.execution import ExperimentSpec
-from costguard.investigation import AnalystSettings, Conclusion, EvidenceTools, PromptProposal, investigate
+from costguard.investigation import (AnalystSettings, Conclusion, EvidenceTools, PromptProposal,
+                                     evidence_numbers, investigate, unsupported_numbers)
 from demo.mock_provider import analyst_message
 from tests.test_execution import artifact
 
@@ -103,6 +104,17 @@ class InvestigationTests(unittest.TestCase):
         tools.inspect_case("one")
         self.assertEqual(tools.finish(answer)["summary"], "Found a change")
 
+    def test_paths_inside_inspected_evidence_resolve_to_their_reference(self):
+        tools = evidence()
+        tools.overview()
+        tools.inspect_case("one")
+        answer = Conclusion.model_validate({"summary": "Output grew", "findings": [
+            {"id": 1, "text": "Verbose", "evidence": ["case:one.candidate.output", "comparison.metrics"]}]})
+        self.assertEqual(tools.finish(answer)["findings"][0]["evidence"], ["case:one", "comparison"])
+        other = Conclusion(summary="x", findings=[{"text": "y", "evidence": ["case:onex"]}])
+        with self.assertRaisesRegex(ValueError, "not inspected"):
+            tools.finish(other)
+
     def test_tools_cannot_access_unrelated_cases(self):
         with self.assertRaisesRegex(ValueError, "not present"):
             evidence().inspect_case("another-suite-case")
@@ -168,13 +180,113 @@ class InvestigationTests(unittest.TestCase):
         self.assertTrue(result["cost_known"])
         self.assertEqual(result["events"], [])
 
+    def test_object_arguments_and_fenced_conclusions_are_accepted(self):
+        def handle(request):
+            body = json.loads(request.content)
+            if not any(message["role"] == "tool" for message in body["messages"]):
+                return response({"role": "assistant", "tool_calls": [{"id": "read", "type": "function",
+                    "function": {"name": "inspect_comparison", "arguments": {}}}]})
+            conclusion = {"summary": "Cost rose", "findings": [{"text": "Input grew", "evidence": ["comparison"]}]}
+            return response({"role": "assistant", "content": "```json\n" + json.dumps(conclusion) + "\n```"})
+        with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(handle)) as client:
+            result = investigate("Find costs", settings(), evidence(), client)
+        self.assertEqual(result["state"], "completed", result["error"])
+        self.assertEqual(result["conclusion"]["summary"], "Cost rose")
+
+    def test_list_fields_sent_as_json_strings_are_decoded(self):
+        replies = iter([tool_message("inspect_comparison", {"unused": True}),
+                        tool_message("finish_investigation", {"summary": "Cost rose",
+                            "findings": json.dumps([{"text": "Input grew", "evidence": ["comparison"]}]),
+                            "next_steps": "[\"Run the proposal\"]"})])
+        with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
+                lambda request: response(next(replies)))) as client:
+            result = investigate("Find costs", settings(), evidence(), client)
+        self.assertEqual(result["state"], "completed", result["error"])
+        self.assertEqual(result["conclusion"]["next_steps"], ["Run the proposal"])
+
+    def test_tool_schemas_omit_length_limits_but_validation_keeps_them(self):
+        from costguard.investigation import TOOLS
+        self.assertNotIn("maxLength", json.dumps(TOOLS))
+        with self.assertRaises(ValueError):
+            Conclusion(summary="", findings=[{"text": "x", "evidence": ["comparison"]}])
+
+    def test_truncated_reasoning_names_the_output_limit(self):
+        body = {"model": "analyst", "choices": [{"message": {"content": ""}, "finish_reason": "length"}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 1200}}
+        with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=body))) as client:
+            result = investigate("Find costs", settings(), evidence(), client)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("1200-token limit", result["error"])
+        self.assertTrue(result["cost_known"])
+
+    def test_case_inspection_includes_recorded_output(self):
+        tools = evidence()
+        tools.candidate.cases[0].output = "A long explanation"
+        self.assertEqual(tools.inspect_case("one")["candidate"]["output"], "A long explanation")
+
     def test_plain_text_cannot_become_an_unvalidated_conclusion(self):
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
                 lambda request: response({"content": "Ship it; everything is safe"}))) as client:
-            result = investigate("Find costs", settings(), evidence(), client)
-        self.assertEqual(result["state"], "failed")
+            result = investigate("Find costs", settings(max_calls=2), evidence(), client)
+        self.assertEqual(result["state"], "interrupted")
         self.assertIsNone(result["conclusion"])
+        self.assertEqual([event["tool"] for event in result["events"]], ["format_reminder"] * 2)
+        self.assertIn("structured conclusion", result["error"])
 
+    def test_tool_mistakes_are_explained_to_the_analyst(self):
+        replies = iter([
+            tool_message("inspect_case", {"case_id": "the most expensive case"}),
+            tool_message("inspect_case", {"wrong": "field"}),
+        ])
+        with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
+                lambda request: response(next(replies)))) as client:
+            result = investigate("Find costs", settings(max_calls=2), evidence(), client)
+        self.assertIn("valid case_id values: one", result["events"][0]["result"]["error"])
+        self.assertIn("case_id: Field required", result["events"][1]["result"]["error"])
+        self.assertNotIn("most expensive", json.dumps(result["events"][1]))
+
+
+class NumberCheckTests(unittest.TestCase):
+    outputs = [{"evidence_ref": "comparison", "metrics": {
+                    "cost_per_request_usd": {"baseline": "0.00005071", "candidate": "0.00017070", "delta_percent": "236.5743"},
+                    "quality_score": {"baseline": "0.8750", "candidate": "0.0000"}}},
+               {"evidence_ref": "case:refund", "baseline": {"calls": [{"output_tokens": 58}]},
+                "candidate": {"calls": [{"output_tokens": 400}, {"output_tokens": 12}]}}]
+
+    def check(self, text):
+        return unsupported_numbers(text, evidence_numbers(self.outputs))
+
+    def test_numbers_rounded_to_their_written_precision_are_found(self):
+        self.assertEqual(self.check("Cost rose 236.57% ($0.0000507 → $0.0001707), about 237%."), [])
+        self.assertEqual(self.check("Quality fell from 87.5% (0.875) to 0."), [])
+
+    def test_sums_and_approximations_are_found(self):
+        self.assertEqual(self.check("The candidate wrote 412 tokens, ≈60 before."), [])
+
+    def test_numbers_missing_from_the_evidence_are_reported_as_written(self):
+        self.assertEqual(self.check("Latency rose 138.14% and output reached 1,250 tokens, costing $5."),
+                         ["138.14%", "1,250", "$5"])
+        self.assertEqual(self.check("Output went from 60 to 412 tokens."), ["60"])
+
+    def test_identifiers_and_small_counts_are_not_checked(self):
+        self.assertEqual(self.check("case-2 on llama3.2:3b-q4_K_M used 3 calls."), [])
+
+    def test_answer_links_cited_cases_and_flags_unfound_numbers(self):
+        from costguard.web import _answer
+        row = {"report_id": "r1", "result": {
+            "events": [{"tool": "inspect_comparison", "result": self.outputs[0]},
+                       {"tool": "inspect_case", "result": self.outputs[1]}],
+            "conclusion": {"summary": "Cost rose 236.57%.", "hypotheses": [], "next_steps": [], "findings": [
+                {"text": "Output grew to 412 tokens.", "evidence": ["case:refund", "comparison"]},
+                {"text": "Latency rose 138.14%.", "evidence": ["comparison"]}]}}}
+        answer = _answer(row)
+        self.assertEqual(answer["summary_unsupported"], [])
+        self.assertEqual(answer["findings"][0]["links"], [
+            {"label": "case refund", "href": "/reports/r1#case-refund"}, {"label": "report", "href": "/reports/r1"}])
+        self.assertEqual(answer["findings"][0]["unsupported"], [])
+        self.assertEqual(answer["findings"][1]["unsupported"], ["138.14%"])
+        self.assertTrue(answer["findings"][0]["quotes_numbers"])
 
 if __name__ == "__main__":
     unittest.main()

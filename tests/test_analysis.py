@@ -116,6 +116,19 @@ class ComparisonTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ComparisonRequest.model_validate(data)
 
+    def test_quality_drop_policy_compares_against_the_baseline(self) -> None:
+        data = request_data()
+        data["policy"] = {"max_quality_drop": 0}
+        self.assertEqual(compare_workloads(ComparisonRequest.model_validate(data)).policy.status, "pass")
+        data["candidate"]["runs"][0]["quality_score"] = "0.70"
+        policy = compare_workloads(ComparisonRequest.model_validate(data)).policy
+        self.assertEqual(policy.status, "fail")
+        self.assertEqual(policy.violations, ["quality fell from 0.8 to 0.7, more than the allowed drop of 0"])
+        data["policy"] = {"max_quality_drop": "0.1"}
+        self.assertEqual(compare_workloads(ComparisonRequest.model_validate(data)).policy.status, "pass")
+        data["candidate"]["runs"][0]["quality_score"] = None
+        self.assertEqual(compare_workloads(ComparisonRequest.model_validate(data)).policy.status, "inconclusive")
+
     def test_reports_when_no_quality_cases_are_comparable(self) -> None:
         data = request_data()
         data["candidate"]["runs"][0]["quality_score"] = None

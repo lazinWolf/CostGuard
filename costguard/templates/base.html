@@ -7,7 +7,7 @@
   <style>
     :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172024; background: #f4f6f4; }
     * { box-sizing: border-box; } body { margin: 0; } a { color: #165e4b; }
-    header { background: #102e29; color: #fff; padding: 1rem 2rem; display: flex; gap: 2rem; align-items: center; }
+    header { background: #102e29; color: #fff; padding: 1rem 2rem; display: flex; flex-wrap: wrap; gap: 1rem 2rem; align-items: center; }
     header a { color: #d9f4e8; text-decoration: none; } header strong { font-size: 1.25rem; color: #fff; }
     nav { display: flex; flex-wrap: wrap; gap: 1.25rem; }
     main { max-width: 1180px; margin: 2rem auto; padding: 0 1rem 3rem; }
@@ -26,9 +26,65 @@
     .metric { font-size: 1.6rem; font-weight: 700; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f6f2; padding: 1rem; border-radius: 8px; }
     .notice { padding: .8rem; border-radius: 7px; margin: 1rem 0; background: #e5efe9; }
     .row { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+    .verdict { border-radius: 12px; padding: 1.1rem 1.3rem; margin: 1rem 0; border: 1px solid; }
+    .verdict strong { font-size: 1.35rem; text-transform: uppercase; letter-spacing: .04em; }
+    .verdict.pass { background: #e6f4ec; border-color: #9fd1b6; } .verdict.fail { background: #fbeae3; border-color: #ecb8a3; }
+    .verdict.inconclusive, .verdict.not_evaluated { background: #fdf5e1; border-color: #ead49a; color: #6b4e00; }
+    .kpi .label { color: #586a66; font-size: .85rem; text-transform: uppercase; letter-spacing: .05em; }
+    .kpi .delta { font-weight: 600; } .up { color: #a64622; } .down { color: #176a50; }
+    .pill { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .8rem; font-weight: 700; background: #e3ebe6; }
+    .pill.pass, .pill.ok, .pill.completed { background: #dcefe4; color: #176a50; }
+    .pill.fail, .pill.error, .pill.failed { background: #f8e0d6; color: #a64622; }
+    .pill.inconclusive, .pill.interrupted, .pill.cancelled, .pill.running, .pill.queued { background: #f6ecd0; color: #6b4e00; }
+    .hero { background: linear-gradient(135deg, #102e29, #1f5a4a); color: #fff; border: 0; }
+    .hero h2, .hero p { color: #fff; } .hero .muted { color: #cfe8dd; } .hero label { color: #e8f6ef; }
+    .hero button { background: #f2c14e; color: #102e29; font-weight: 700; } .hero button:hover { background: #ffd36b; color: #102e29; }
+    .output { font-family: ui-monospace, monospace; font-size: .8rem; max-height: 8rem; overflow: auto; white-space: pre-wrap; background: #f2f6f2; padding: .5rem; border-radius: 6px; }
+    .table-wrap { overflow-x: auto; } code { overflow-wrap: anywhere; }
+    .steps { color: #586a66; font-size: .9rem; }
+    .flow { display: flex; flex-wrap: wrap; gap: .4rem; margin: .8rem 0 1.2rem; padding: 0; list-style: none; counter-reset: step; }
+    .flow li { counter-increment: step; display: flex; align-items: center; gap: .45rem; padding: .45rem .8rem; border-radius: 999px; background: #e7ede9; color: #586a66; font-size: .9rem; }
+    .flow li::before { content: counter(step); display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%; background: #c9d6cf; color: #fff; font-size: .75rem; font-weight: 700; }
+    .flow li.done { background: #dcefe4; color: #176a50; } .flow li.done::before { content: "✓"; background: #176a50; }
+    .flow li.current { background: #102e29; color: #fff; font-weight: 700; } .flow li.current::before { background: #f2c14e; color: #102e29; }
+    .flow a { color: inherit; }
+    .prompts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+    .prompt { background: #f2f6f2; border-radius: 8px; padding: .9rem; line-height: 1.55; white-space: pre-wrap; }
+    .prompt del { background: #f8d9cc; color: #7d2f12; text-decoration: line-through; } .prompt ins { background: #cfeedd; color: #0f4f3c; text-decoration: none; }
+    .bar { height: .55rem; border-radius: 999px; background: #e3ebe6; overflow: hidden; min-width: 6rem; } .bar span { display: block; height: 100%; background: #a64622; }
+    .answer { font-family: ui-monospace, monospace; font-size: .82rem; }
+    .answer.right { color: #176a50; } .answer.wrong { color: #a64622; }
+    .explain { color: #3d4f4b; background: #f7faf8; border-left: 3px solid #b8ccc1; padding: .6rem .9rem; border-radius: 0 8px 8px 0; margin: .6rem 0; }
+    .timeline { list-style: none; padding: 0; margin: 0; } .timeline li { position: relative; padding: .55rem 0 .55rem 1.8rem; border-left: 2px solid #d8e2dc; margin-left: .5rem; }
+    .timeline li::before { content: ""; position: absolute; left: -.45rem; top: .85rem; width: .8rem; height: .8rem; border-radius: 50%; background: #176a50; }
+    .timeline li.error::before { background: #a64622; } .timeline li.pending::before { background: #f2c14e; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { opacity: .3; } }
+    .compare-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .compare-cols .card { margin: 0; } .highlight { outline: 3px solid #f2c14e; }
+    td small, .small { font-size: .82rem; }
+    .lead { font-size: 1.08rem; line-height: 1.5; } .findings { padding-left: 1.2rem; } .findings li { margin: .7rem 0; line-height: 1.5; }
+    .chip { display: inline-block; padding: .05rem .5rem; border-radius: 999px; background: #e3ebe6; color: #165e4b; text-decoration: none; font-size: .8rem; }
+    .check { font-size: .8rem; } .check.ok { color: #176a50; } .check.warn { color: #8a5a00; background: #fdf5e1; padding: .05rem .45rem; border-radius: 6px; }
+    tr:target td { background: #fff6d6; } tr[id] { scroll-margin-top: 1rem; }
+    .whatif input { max-width: 12rem; } .whatif .grid { align-items: end; }
   </style>
 </head>
 <body><header><a href="/"><strong>CostGuard</strong></a><nav>
-  <a href="/">Overview</a><a href="/investigations">Investigations</a><a href="/connections">Connections</a><a href="/experiments">Experiments</a>
-  <a href="/reports">Reports</a><a href="/scenarios">Scenarios</a><a href="/docs">API</a>
-</nav></header><main>{% block content %}{% endblock %}</main></body></html>
+  <a href="/">Overview</a><a href="/reports">Reports</a><a href="/investigations">Investigations</a><a href="/connections">Connections</a><a href="/docs">API</a>
+</nav></header><main>{% block content %}{% endblock %}</main>
+<script>
+// Word-level diff of two prompts: removed words in `left`, added words in `right`.
+function diffWords(leftEl, rightEl){
+  const a=leftEl.textContent.split(/(\s+)/), b=rightEl.textContent.split(/(\s+)/);
+  const n=a.length, m=b.length, dp=Array.from({length:n+1},()=>new Uint16Array(m+1));
+  for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  const esc=t=>t.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  let i=0,j=0,left='',right='';
+  while(i<n&&j<m){if(a[i]===b[j]){left+=esc(a[i]);right+=esc(b[j]);i++;j++;}
+    else if(dp[i+1][j]>=dp[i][j+1]){left+=/^\s+$/.test(a[i])?esc(a[i]):'<del>'+esc(a[i])+'</del>';i++;}
+    else{right+=/^\s+$/.test(b[j])?esc(b[j]):'<ins>'+esc(b[j])+'</ins>';j++;}}
+  while(i<n){left+='<del>'+esc(a[i++])+'</del>';} while(j<m){right+='<ins>'+esc(b[j++])+'</ins>';}
+  leftEl.innerHTML=left; rightEl.innerHTML=right;
+}
+document.querySelectorAll('[data-diff-left]').forEach(el=>{const other=document.getElementById(el.dataset.diffLeft);if(other)diffWords(el,other);});
+</script></body></html>

@@ -1,16 +1,101 @@
 {% extends "base.html" %}{% block title %}CostGuard overview{% endblock %}
-{% block content %}<h1>Investigate AI workload economics</h1><p class="muted">Ask a model to investigate evidence, propose an experiment, and measure the result against your constraints.</p>
-<section class="card"><h2>Start an economic investigation</h2><p>Use a saved comparison to examine what changed and decide what to test next.</p><a class="button" href="/investigations">Investigations</a></section>
-{% if demo_enabled %}<section class="card"><h2>Try the complete demo</h2><p>Create baseline and candidate runs through the mock provider and open their comparison. This action uses no real model provider. An unconfigured analyst is set to the mock analyst.</p><button id="demo" onclick="loadDemo()">Create demo comparison</button><p id="demo-message" class="notice" hidden></p></section>{% endif %}
-<div class="grid"><div class="card"><h2>1. Connect a model</h2><p>Configure local or cloud providers in Bifrost.</p><a class="button" href="/connections">Connections</a></div>
-<div class="card"><h2>2. Run a case suite</h2><p>Capture calls, usage, latency and quality.</p><a class="button" href="/experiments">Experiments</a></div>
-<div class="card"><h2>3. Compare and gate</h2><p>Inspect cost changes and save a policy result.</p><a class="button" href="/reports">Reports</a></div></div>
-<div class="grid"><section class="card"><h2>Recent runs</h2>{% for a in artifacts %}<p><a href="/artifacts/{{a.id}}">{{a.name}}</a> <span class="muted">{{a.suite_id}}</span></p>{% else %}<p>No saved runs yet.</p>{% endfor %}</section>
-<section class="card"><h2>Recent reports</h2>{% for r in reports %}<p><a href="/reports/{{r.id}}">{{r.id[:8]}}</a> <span class="status {{r.status}}">{{r.status}}</span></p>{% else %}<p>No comparisons yet.</p>{% endfor %}</section></div>
-<section class="card"><h2>Recent investigations</h2>{% for item in investigations %}<p><a href="/investigations/{{item.id}}">{{item.question}}</a> · <span class="status {{item.state}}">{{item.state}}</span></p>{% else %}<p>Start one after creating a comparison and configuring an analyst.</p>{% endfor %}</section>
+{% block content %}
+<h1>What will this AI change cost?</h1>
+<p class="muted">CostGuard runs the same cases on a baseline and a candidate, prices them on one explicit catalog, checks quality and policy, and lets an analyst model investigate the difference and propose a measured fix.</p>
+
+<form class="card hero" id="real-demo">
+  <h2>Run the real-model demo</h2>
+  <p>{{suite.description}} {{suite.cases|length}} support messages × 2 prompts, scored by a <code>{{suite.evaluator}}</code> label match.</p>
+  <div class="grid">
+    <div><label for="demo-model">Gateway model (provider/model)</label>
+      <input id="demo-model" list="demo-models" required placeholder="ollama/llama3.2:3b-instruct-q4_K_M"><datalist id="demo-models"></datalist>
+      <p id="gateway-note" class="muted">Checking the gateway…</p></div>
+    <div><label for="demo-input">Input USD / million tokens</label><input id="demo-input" type="number" min="0" step="any" required value="{{suite.reference_pricing.input_per_million_usd}}"></div>
+    <div><label for="demo-output">Output USD / million tokens</label><input id="demo-output" type="number" min="0" step="any" required value="{{suite.reference_pricing.output_per_million_usd}}"></div>
+  </div>
+  <p class="muted">Default prices are notional reference rates so a free local model still shows a cost difference. Enter your provider's real prices for a cloud model.</p>
+  <label class="row"><input id="demo-analyst" type="checkbox" checked style="width:auto"> Also use this model as the investigation analyst (it needs tool-calling support)</label>
+  <p><button id="demo-start" type="submit">Run baseline and candidate</button></p>
+  <p class="muted">This calls the selected model {{suite.cases|length * 2}} times and may incur provider charges. A local model on CPU can take several minutes.</p>
+  <p id="demo-status" class="notice" hidden></p>
+</form>
+<section class="card" id="live" hidden><h2>Running the demo</h2>
+  <p class="muted small">Each message is sent to the model with the baseline prompt, then with the candidate prompt. When both finish, CostGuard compares them and opens the report.</p>
+  <div class="prompts"><div><h3>Baseline <span id="live-baseline-count" class="muted small"></span></h3><div id="live-baseline"></div></div>
+  <div><h3>Candidate <span id="live-candidate-count" class="muted small"></span></h3><div id="live-candidate"></div></div></div>
+</section>
+
+{% if demo_enabled %}<section class="card"><h2>Offline mock demo</h2><p class="muted">No model needed: a deterministic mock provider and a scripted analyst exercise the full workflow. Use it to check the stack, not to judge model reasoning.</p><button id="mock-demo" onclick="loadMockDemo()">Create mock comparison</button><p id="mock-message" class="notice" hidden></p></section>{% endif %}
+
+<section class="card"><h2>How it works</h2>
+  <ol class="flow">
+    <li>Run both prompts on the same cases</li><li>Price both on one catalog</li><li>Apply your limits: pass, fail or inconclusive</li>
+    <li>An analyst model explains and proposes a fix</li><li>Run the fix and compare with the baseline</li>
+  </ol>
+  <p class="muted small">The same verdict gates CI: <code>python -m costguard gate --baseline … --candidate … --pricing … --policy …</code> exits 0 for pass, 1 for fail, 2 for inconclusive. Models are reached through the <a href="/connections">Bifrost gateway</a>, local (Ollama) or cloud.</p>
+</section>
+
+<div class="grid">
+  <section class="card"><h2>Recent reports</h2>{% for r in reports %}<p><a href="/reports/{{r.id}}">{{r.candidate_name}}</a> <span class="pill {{r.status}}">{{r.status}}</span><br><small class="muted">vs {{r.baseline_name}} · {{r.model or ''}}{% if r.cost_change %} · cost {{'+' if r.cost_change|float > 0}}{{r.cost_change|num}}%{% endif %} · {{r.created_at[:16]|replace('T', ' ')}}</small></p>{% else %}<p>No comparisons yet.</p>{% endfor %}{% if reports %}<p><a href="/reports">All reports</a></p>{% endif %}</section>
+  <section class="card"><h2>Recent investigations</h2>{% for item in investigations %}<p><a href="/investigations/{{item.id}}">{{item.question|truncate(70)}}</a> <span class="pill {{item.state}}">{{item.state}}</span></p>{% else %}<p>None yet.</p>{% endfor %}</section>
+</div>
+
 <script>
-async function loadDemo(){const button=document.getElementById('demo');const message=document.getElementById('demo-message');button.disabled=true;message.hidden=false;message.textContent='Setting up mock provider and running paired cases…';
-  async function api(path,body){const response=await fetch('/api/v1/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const data=await response.json();if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));return data;}
-  async function waitJob(id){for(let attempt=0;attempt<90;attempt++){const job=await api('jobs/'+id);if(job.state==='completed')return job.artifact_id;if(!['queued','running'].includes(job.state))throw Error(job.error||'Demo job did not complete');await new Promise(resolve=>setTimeout(resolve,1000));}throw Error('Demo is still pending. Check Experiments for runner progress.');}
-  try{const demo=await api('demo',{});const baseline=await waitJob(demo.baseline_job_id);const candidate=await waitJob(demo.candidate_job_id);message.textContent='Saving comparison…';const report=await api('comparisons',{baseline_id:baseline,candidate_id:candidate,pricing:demo.pricing,policy:demo.policy,monthly_requests:100000});location.href='/reports/'+report.id;}catch(error){message.textContent=error.message;button.disabled=false;}}
-</script>{% endblock %}
+async function api(path, body){
+  const response=await fetch('/api/v1/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  const data=await response.json();
+  if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));
+  return data;
+}
+async function waitJob(id, label, report, limitSeconds){
+  for(let waited=0; waited<limitSeconds; waited+=2){
+    const job=await api('jobs/'+id);
+    if(job.state==='completed'){showLive(label.toLowerCase(), job);return job.artifact_id;}
+    if(!['queued','running'].includes(job.state))throw Error(label+' run '+job.state+(job.error?': '+job.error:''));
+    report(label+' run: '+job.state+' · '+job.progress+' / '+job.total+' cases');
+    showLive(label.toLowerCase(), job);
+    await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+  throw Error(label+' run is still pending. Follow it on Experiments, then compare on Reports.');
+}
+const escape=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function showLive(side, job){
+  const box=document.getElementById('live-'+side); if(!box)return;
+  document.getElementById('live').hidden=false;
+  const rows=job.cases||[]; const correct=rows.filter(c=>c.quality===1).length;
+  const tokens=rows.reduce((sum,c)=>sum+(c.output_tokens||0),0);
+  document.getElementById('live-'+side+'-count').textContent=`${rows.length}/${job.total} · ${correct} correct · ${tokens} output tokens`;
+  box.innerHTML=rows.map(c=>`<p class="small"><span class="answer ${c.quality===1?'right':'wrong'}">${c.quality===1?'✓':'✗'}</span> <strong>${escape(c.case_id)}</strong> → <span class="answer">${escape((c.output||c.error||'').slice(0,70))}${(c.output||'').length>70?'…':''}</span> <span class="muted">(${c.output_tokens??'?'} tokens)</span></p>`).join('')||'<p class="muted small">waiting…</p>';
+}
+async function runPair(demo, report, limitSeconds){
+  const baseline=await waitJob(demo.baseline_job_id,'Baseline',report,limitSeconds);
+  const candidate=await waitJob(demo.candidate_job_id,'Candidate',report,limitSeconds);
+  report('Saving comparison…');
+  const saved=await api('comparisons',{baseline_id:baseline,candidate_id:candidate,pricing:demo.pricing,policy:demo.policy,monthly_requests:demo.monthly_requests||100000});
+  location.href='/reports/'+saved.id;
+}
+(async()=>{
+  const note=document.getElementById('gateway-note');const input=document.getElementById('demo-model');
+  try{const gateway=await api('gateway');const list=document.getElementById('demo-models');
+    gateway.models.forEach(id=>{const option=document.createElement('option');option.value=id;list.appendChild(option);});
+    if(gateway.status!=='connected'){note.textContent='Gateway unavailable. Start Compose with --profile local or --profile gateway.';return;}
+    const preferred=gateway.models.find(id=>id.startsWith('ollama/llama3.2'))||gateway.models.find(id=>id.startsWith('ollama/'))||gateway.models.find(id=>!id.startsWith('costguard-mock/'));
+    if(preferred&&!input.value)input.value=preferred;
+    note.textContent=gateway.models.length+' model IDs available from the gateway.';
+  }catch(error){note.textContent='Unable to reach the gateway status endpoint.';}
+})();
+document.getElementById('real-demo').addEventListener('submit',async event=>{
+  event.preventDefault();const button=document.getElementById('demo-start');const status=document.getElementById('demo-status');
+  const report=text=>{status.hidden=false;status.textContent=text;};button.disabled=true;
+  try{report('Queuing runs…');
+    const demo=await api('demo/real',{model:document.getElementById('demo-model').value.trim(),input_per_million_usd:document.getElementById('demo-input').value,output_per_million_usd:document.getElementById('demo-output').value,configure_analyst:document.getElementById('demo-analyst').checked});
+    await runPair(demo,report,3600);
+  }catch(error){report(error.message);button.disabled=false;}
+});
+async function loadMockDemo(){
+  const button=document.getElementById('mock-demo');const message=document.getElementById('mock-message');
+  const report=text=>{message.hidden=false;message.textContent=text;};button.disabled=true;
+  try{report('Setting up the mock provider…');await runPair(await api('demo',{}),report,120);}catch(error){report(error.message);button.disabled=false;}
+}
+</script>
+{% endblock %}

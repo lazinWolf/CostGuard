@@ -1,37 +1,106 @@
 {% extends "base.html" %}{% block title %}Investigation · CostGuard{% endblock %}
-{% block content %}{% set item=investigation %}{% set result=item.result %}{% set analyst=item.request.analyst %}
-<h1>Economic investigation</h1><p>{{item.request.question}}</p>
-<div class="card"><p>State: <span id="state" class="status {{item.state}}">{{item.state}}</span> · <a href="/reports/{{item.report_id}}">Measured comparison</a></p>
-<p>Analyst: {{analyst.provider}}/{{analyst.model}} · <span id="calls">{{result.get('calls',[])|length}}</span> / {{analyst.max_calls}} calls</p>
-<p>Investigation cost: <strong id="cost">{{('$' ~ result.cost_usd) if result.get('cost_known') else 'Unknown / not started'}}</strong> · price version {{analyst.pricing_version}}</p>
-{% if result.get('calls') and not result.get('cost_known') %}<p class="muted">Observed subtotal: ${{result.get('known_cost_usd','0')}}. In-flight or unobserved charges may be additional.</p>{% endif %}
-{% if item.error %}<p class="notice">{{item.error}}</p>{% endif %}
-{% if item.state in ['queued','running'] %}<p class="muted">The analyst is choosing evidence tools and building its findings. Cancellation stops further calls after the current request.</p><button onclick="action('cancel')">Cancel investigation</button>{% endif %}
-<p id="message" class="notice" hidden></p></div>
-{% if result.get('conclusion') %}{% set conclusion=result.conclusion %}
-<section class="card"><h2>Findings</h2><p>{{conclusion.summary}}</p>
-{% for finding in conclusion.findings %}<div class="finding"><p>{{finding.text}}</p><p class="muted">Evidence: {% for reference in finding.evidence %}<a href="/reports/{{item.report_id}}">{{reference}}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p></div>{% endfor %}
-<p class="muted">These are model interpretations of cited evidence. The linked comparison contains the calculated policy result.</p></section>
-{% if conclusion.hypotheses %}<section class="card"><h2>Hypotheses to test</h2><ul>{% for text in conclusion.hypotheses %}<li>{{text}}</li>{% endfor %}</ul></section>{% endif %}
-{% if conclusion.next_steps %}<section class="card"><h2>Next measurements</h2><ul>{% for text in conclusion.next_steps %}<li>{{text}}</li>{% endfor %}</ul></section>{% endif %}
+{% macro check(unsupported) %}{% if unsupported %}<span class="check warn" title="CostGuard could not find these numbers in the evidence the analyst inspected. They may be derived or mistaken; check them on the report.">⚠ not in the evidence: {{unsupported|join(', ')}}</span>{% endif %}{% endmacro %}
+{% block content %}{% set item=investigation %}{% set result=item.result %}{% set analyst=item.request.analyst %}{% set proposal=result.get('proposal') %}
+{% set active = item.state in ['queued', 'running'] %}
+<ol class="flow">
+  <li class="done">Run baseline &amp; candidate</li>
+  <li class="done"><a href="/reports/{{item.report_id}}">Compare &amp; apply policy</a></li>
+  <li class="{{'current' if not item.proposal_job_id else 'done'}}">Investigate</li>
+  <li class="{{'current' if item.proposal_job_id and not item.proposal_report_id else 'done' if item.proposal_report_id else ''}}">Test the proposed fix</li>
+  <li class="{{'current' if item.proposal_report_id else ''}}">Result</li>
+</ol>
+
+<h1>Investigation</h1>
+<p class="explain">“{{item.request.question}}”</p>
+<div class="card row">
+  <span id="state" class="pill {{item.state}}">{{item.state}}</span>
+  <span>Analyst <code>{{analyst.provider}}/{{analyst.model}}</code></span>
+  <span class="muted">· <span id="calls">{{result.get('calls', [])|length}}</span> of {{analyst.max_calls}} model calls · cost <strong id="cost">{{('$' ~ result.cost_usd) if result.get('cost_known') else 'unknown'}}</strong></span>
+  {% if active %}<button onclick="action('cancel')">Stop after the current call</button>{% endif %}
+</div>
+{% set outcome = variants[2] if variants|length > 2 else none %}
+<div class="verdict {{outcome.status if outcome else 'fail' if item.state in ['failed', 'interrupted', 'cancelled'] else 'not_evaluated'}}">
+  <strong>{% if outcome %}Result: the fix {{'passes' if outcome.status == 'pass' else 'fails' if outcome.status == 'fail' else 'is inconclusive'}}{% elif active %}The analyst is working{% elif item.state != 'completed' %}The investigation stopped{% elif proposal and not item.proposal_job_id %}Next step: test the proposed fix{% elif proposal_job %}Testing the fix{% else %}Investigation complete{% endif %}</strong>
+  {% if outcome %}<p>Compared with the original baseline: {{outcome.cost|usd}} per request (baseline {{variants[0].cost|usd}}){% if outcome.quality is not none %}, {{(outcome.quality|float * outcome.cases)|round|int}} of {{outcome.cases}} answers correct (baseline {{(variants[0].quality|float * variants[0].cases)|round|int}}){% endif %}.</p>
+    <p class="row"><a class="button" href="/reports/{{item.proposal_report_id}}">Open the result report</a></p>
+  {% elif active %}<p>It reads the evidence step by step (see “What the analyst did” below). This page updates by itself.</p>
+  {% elif item.state != 'completed' %}<p>{{item.error}}</p><p class="small">Small local models often can't follow the tool workflow. Choose a stronger analyst on <a href="/connections">Connections</a> and <a href="/investigations?report_id={{item.report_id}}">investigate again</a>.</p>
+  {% elif proposal and not item.proposal_job_id %}<p>The analyst suggests a new system prompt (shown below). Running it sends the same {{proposal.spec.cases|length}} cases to {{proposal.spec.provider}}/{{proposal.spec.model}} and compares the result with the original baseline.</p>
+    <p class="row"><button onclick="action('run-proposal')">Run the proposed fix ({{proposal.spec.cases|length}} model calls)</button> <span class="small">May incur provider charges.</span></p>
+  {% elif proposal_job %}<p>Running the proposed prompt: {{proposal_job.progress}} of {{proposal_job.total}} cases. The comparison opens here when it finishes. <a href="/jobs/{{proposal_job.id}}">Watch the run</a></p>
+  {% else %}<p>The analyst did not propose a prompt change{{' because this comparison has no runnable source experiment' if not item.request.source_spec}}.</p>{% endif %}
+</div>
+<p id="message" class="notice" hidden></p>
+
+{% if answer %}
+<section class="card"><h2>What the analyst found</h2>
+  <p class="lead">{{answer.summary}}</p>{{check(answer.summary_unsupported)}}
+  <ul class="findings">{% for finding in answer.findings %}<li>{{finding.text}}
+    <div class="row small">{% for ref in finding.links %}<a class="chip" href="{{ref.href}}">{{ref.label}}</a>{% endfor %}
+      {% if finding.unsupported %}{{check(finding.unsupported)}}{% elif finding.quotes_numbers %}<span class="check ok">✓ numbers found in the evidence</span>{% endif %}</div></li>{% endfor %}</ul>
+  {% if answer.hypotheses %}<h3>Not yet proven</h3><ul>{% for text in answer.hypotheses %}<li>{{text}}</li>{% endfor %}</ul>{% endif %}
+  {% if answer.next_steps %}<h3>Worth measuring next</h3><ul>{% for text in answer.next_steps %}<li>{{text}}</li>{% endfor %}</ul>{% endif %}
+  <p class="muted small">These are the model's reading of the evidence. CostGuard checks that every number it quotes appears in what it inspected, but the costs and the pass/fail decision always come from the report, not from the analyst.</p>
+</section>{% endif %}
+
+{% if proposal %}
+<section class="card" id="proposal"><h2>Proposed fix</h2>
+  <p>{{proposal.rationale}}</p>
+  <p class="muted small">Prompt length: baseline {{prompts.baseline.split()|length}} words · candidate {{prompts.candidate.split()|length}} words · proposal {{proposal.spec.system_prompt.split()|length}} words. A longer prompt costs more input tokens on every request.</p>
+  <div class="prompts">
+    <div><h3>Candidate prompt</h3><div class="prompt" id="p-candidate" data-diff-left="p-proposal">{{prompts.candidate}}</div></div>
+    <div><h3>Proposed prompt</h3><div class="prompt" id="p-proposal">{{proposal.spec.system_prompt}}</div></div>
+  </div>
+  {% if proposal.spec.system_prompt == prompts.baseline %}<p class="notice">The proposal is identical to the baseline prompt. Running it confirms that reverting fixes the regression.</p>{% endif %}
+  <p class="muted small">Only the system prompt changes. The same {{proposal.spec.cases|length}} cases, model ({{proposal.spec.provider}}/{{proposal.spec.model}}), prices and limits are reused.</p>
+  {% if proposal_job %}
+    <p class="row">Run: <a href="/jobs/{{proposal_job.id}}">{{proposal_job.progress}} of {{proposal_job.total}} cases</a> <span class="pill {{proposal_job.state}}">{{proposal_job.state}}</span>
+    {% if proposal_job.state == 'completed' and not item.proposal_report_id %}<button onclick="action('compare-proposal')">Compare with the original baseline</button>{% endif %}</p>
+  {% endif %}
+  <details><summary class="small">Full experiment settings</summary><pre>{{proposal.spec|tojson(indent=2)}}</pre></details>
+</section>
 {% endif %}
-{% if result.get('proposal') %}{% set proposal=result.proposal %}
-<section class="card"><h2>Proposed prompt experiment</h2><p>{{proposal.rationale}}</p><pre>{{proposal.spec.system_prompt}}</pre>
-<p>Model: {{proposal.spec.provider}}/{{proposal.spec.model}} · {{proposal.spec.cases|length}} cases · original prices and execution limits.</p>
-{% if item.state == 'completed' and not item.proposal_job_id %}<p class="muted">Running this experiment calls the workload model and may incur provider charges. It is queued once even if this action is repeated.</p><button onclick="action('run-proposal')">Run proposed experiment</button>
-{% elif proposal_job %}<p>Experiment: <a href="/jobs/{{proposal_job.id}}">{{proposal_job.id[:8]}}</a> · <span class="status {{proposal_job.state}}">{{proposal_job.state}}</span></p>
-{% if item.proposal_report_id %}<a class="button" href="/reports/{{item.proposal_report_id}}">View measured outcome</a><a class="button" href="/investigations?report_id={{item.proposal_report_id}}">Investigate the outcome</a>
-{% elif proposal_job.state == 'completed' %}<button onclick="action('compare-proposal')">Compare against original baseline</button>{% endif %}
-{% endif %}
-<details><summary>Review complete experiment settings</summary><pre>{{proposal.spec|tojson(indent=2)}}</pre></details></section>
-{% endif %}
-{% if result.get('events') %}<section class="card"><h2>Evidence and tool activity</h2>{% for event in result.events %}<details><summary>{{loop.index}}. {{event.tool}}</summary><pre>{{event.result|tojson(indent=2)}}</pre></details>{% endfor %}</section>{% endif %}
+
+<section class="card"><h2>{{'Did the fix work?' if outcome else 'Where things stand'}}</h2><div class="compare-cols">{% for v in variants %}
+  <div class="card {{'highlight' if v.label == 'Proposal'}}"><div class="kpi"><div class="label">{{v.label}}</div>
+    <div class="metric">{{v.cost|usd}}</div><p class="small muted">per request</p>
+    <p>{% if v.quality is not none %}<strong>{{(v.quality|float * v.cases)|round|int}} / {{v.cases}}</strong> correct{% else %}quality unknown{% endif %} · {{v.output_tokens if v.output_tokens is not none else '?'}} output tokens / case</p>
+    {% if v.status %}<p>vs baseline: <span class="pill {{v.status}}">{{v.status}}</span></p>{% endif %}
+    <p class="small"><a href="/artifacts/{{v.id}}">open run</a></p></div></div>{% endfor %}
+  {% if not outcome %}<div class="card"><div class="kpi"><div class="label">Proposal</div><p class="muted">{{'Not run yet.' if proposal else 'No proposal.'}}</p></div></div>{% endif %}
+</div>
+{% if outcome %}<p class="row" style="margin-top:1rem"><a class="button" href="/reports/{{item.proposal_report_id}}">Open the full result report</a> <a href="/investigations?report_id={{item.proposal_report_id}}">Investigate this result</a></p>{% endif %}
+</section>
+
+<details class="card" {{'open' if active or item.state != 'completed'}}><summary><strong>What the analyst did</strong> <span class="muted small">{{timeline|length}} tool step{{'' if timeline|length == 1 else 's'}}</span></summary>
+  <p class="muted small">The analyst can only use four read-only tools: read this comparison, inspect a case, propose one prompt, and finish. It cannot run anything itself.</p>
+  <ol class="timeline">
+    {% for step in timeline %}<li class="{{'error' if step.error}}">{{step.text}}
+      {% if step.error %}<br><small class="answer wrong">Rejected: {{step.error}}</small>{% endif %}
+      {% if step.saw %}<br><small class="muted">{{step.saw}}</small>{% endif %}
+      {% if step.tool not in ['format_reminder', 'finish_investigation'] %}<details><summary class="small muted">raw data</summary><pre>{{step.detail|tojson(indent=2)}}</pre></details>{% endif %}</li>{% endfor %}
+    {% if active %}<li class="pending">{{'Waiting for the runner…' if item.state == 'queued' else 'Thinking…'}}</li>{% elif not timeline %}<li class="error">No tool activity recorded.</li>{% endif %}
+  </ol>
+</details>
+
 <script>
 const investigationId={{item.id|tojson}};
-async function action(name){const message=document.getElementById('message');document.querySelectorAll('button').forEach(button=>button.disabled=true);try{const response=await fetch('/api/v1/investigations/'+investigationId+'/'+name,{method:'POST'});const data=await response.json();if(!response.ok)throw Error(data.detail);location.reload();}catch(error){message.hidden=false;message.textContent=error.message;document.querySelectorAll('button').forEach(button=>button.disabled=false);}}
-async function poll(){try{const response=await fetch('/api/v1/investigations/'+investigationId);if(!response.ok)throw Error('Unable to refresh investigation');const data=await response.json();document.getElementById('calls').textContent=(data.result.calls||[]).length;document.getElementById('cost').textContent=data.result.cost_known?'$'+data.result.cost_usd:'Unknown / not started';if(data.state!=={{item.state|tojson}}){location.reload();return;}}catch(error){const message=document.getElementById('message');message.hidden=false;message.textContent=error.message;}setTimeout(poll,2000);}
-{% if item.state in ['queued','running'] %}setTimeout(poll,1000);{% endif %}
-{% if proposal_job and proposal_job.state in ['queued','running'] %}
-async function pollJob(){try{const response=await fetch('/api/v1/jobs/'+{{proposal_job.id|tojson}});if(response.ok){const data=await response.json();if(data.state!=={{proposal_job.state|tojson}}){location.reload();return;}}}catch(error){}setTimeout(pollJob,2000);}setTimeout(pollJob,1000);
+async function action(name){const message=document.getElementById('message');document.querySelectorAll('button').forEach(b=>b.disabled=true);
+  try{const r=await fetch('/api/v1/investigations/'+investigationId+'/'+name,{method:'POST'});const data=await r.json();if(!r.ok)throw Error(data.detail);location.reload();}
+  catch(e){message.hidden=false;message.textContent=e.message;document.querySelectorAll('button').forEach(b=>b.disabled=false);}}
+{% if active %}
+const seen={{result.get('events', [])|length}}, seenState={{item.state|tojson}};
+async function poll(){try{const r=await fetch('/api/v1/investigations/'+investigationId);const d=await r.json();
+  document.getElementById('calls').textContent=(d.result.calls||[]).length;
+  document.getElementById('cost').textContent=d.result.cost_known?'$'+d.result.cost_usd:'unknown';
+  if(d.state!==seenState||(d.result.events||[]).length!==seen){location.reload();return;}}catch(e){}setTimeout(poll,1500);}
+setTimeout(poll,1500);
 {% endif %}
-</script>{% endblock %}
+{% if proposal_job and proposal_job.state in ['queued', 'running'] %}
+async function pollJob(){try{const r=await fetch('/api/v1/jobs/'+{{proposal_job.id|tojson}});const d=await r.json();
+  if(d.state==='completed'){await fetch('/api/v1/investigations/'+investigationId+'/compare-proposal',{method:'POST'});location.reload();return;}
+  if(d.state!=={{proposal_job.state|tojson}}||d.progress!=={{proposal_job.progress}}){location.reload();return;}}catch(e){}setTimeout(pollJob,1500);}
+setTimeout(pollJob,1500);
+{% endif %}
+</script>
+{% endblock %}

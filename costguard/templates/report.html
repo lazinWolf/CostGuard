@@ -1,12 +1,120 @@
-{% extends "base.html" %}{% block title %}Economic report · CostGuard{% endblock %}
-{% block content %}{% set r=saved.report %}<h1>Economic comparison</h1><p>Report <code>{{saved.id}}</code> · <span class="status {{r.status}}">{{r.status}}</span></p>
-<p><a class="button" href="/investigations?report_id={{saved.id}}">Investigate this comparison</a></p>
-{% if r.reasons %}<div class="notice"><strong>Evidence notes</strong><ul>{% for reason in r.reasons %}<li>{{reason}}</li>{% endfor %}</ul></div>{% endif %}
-{% if r.economic %}{% set e=r.economic %}<div class="grid"><div class="card"><h2>Cost / request</h2><div class="metric">${{e.cost_per_request_usd.candidate|money}}</div><p>Before ${{e.cost_per_request_usd.baseline|money}} · Change {{e.cost_per_request_usd.delta_percent}}%</p></div>
-<div class="card"><h2>Mean latency</h2><div class="metric">{{e.mean_latency_ms.candidate}} ms</div><p>Change {{e.mean_latency_ms.delta_percent}}%</p></div><div class="card"><h2>Quality</h2><div class="metric">{{e.quality_score.candidate if e.quality_score else 'Unknown'}}</div><p>{{e.quality_cases_compared}} scored pairs</p></div>
-{% if e.monthly_projection %}<div class="card"><h2>Projected monthly</h2><div class="metric">${{e.monthly_projection.cost_usd.candidate|money}}</div><p>Change ${{e.monthly_projection.cost_usd.delta|money}}</p></div>{% endif %}</div>{% endif %}
-<div class="grid"><section class="card"><h2>Execution behavior / case</h2><p>Model calls: {{r.model_calls.baseline}} → {{r.model_calls.candidate}}</p><p>Retries: {{r.retries.baseline}} → {{r.retries.candidate}}</p><p>Tool steps: {{r.tool_steps.baseline}} → {{r.tool_steps.candidate}}</p><p>P95 latency: {{r.p95_latency_ms.candidate if r.p95_latency_ms else 'Unknown'}} ms</p></section>
-<section class="card"><h2>Policy</h2><p class="status {{r.policy.status}}">{{r.policy.status}}</p><ul>{% for v in r.policy.violations %}<li>{{v}}</li>{% endfor %}{% for u in r.policy.unknowns %}<li>{{u}}</li>{% endfor %}</ul></section></div>
-{% if r.contributors %}<section class="card"><h2>Largest observed cost increases</h2><ul>{% for c in r.contributors %}<li>{{c}}</li>{% endfor %}</ul></section>{% endif %}
-{% if r.economic %}<section class="card"><h2>Cases</h2><table><tr><th>Case</th><th>Before</th><th>After</th><th>Change</th></tr>{% for c in r.economic.case_costs %}<tr><td>{{c.case_id}}</td><td>${{c.cost_usd.baseline|money}}</td><td>${{c.cost_usd.candidate|money}}</td><td>${{c.cost_usd.delta|money}}</td></tr>{% endfor %}</table></section>{% endif %}
-<p><a href="/artifacts/{{r.baseline_id}}">Baseline execution</a> · <a href="/artifacts/{{r.candidate_id}}">Candidate execution</a> · <a href="/api/v1/comparisons/{{saved.id}}">JSON report</a></p>{% endblock %}
+{% extends "base.html" %}{% block title %}Report · CostGuard{% endblock %}
+{% macro change(metric) %}{% if metric is none or metric.delta_percent is none %}<span class="muted">n/a</span>{% else %}{% set value = metric.delta_percent|float %}<span class="delta {{'up' if value > 0 else 'down' if value < 0 else ''}}">{{'+' if value > 0 else ''}}{{metric.delta_percent|num}}%</span>{% endif %}{% endmacro %}
+{% macro answer(case, expected) %}{% if case is none %}<span class="muted">–</span>{% elif case.status != 'ok' %}<span class="pill error">{{case.status}}</span> <small class="muted">{{case.error}}</small>{% else %}{% set right = case.quality_score is not none and case.quality_score|float >= 1 %}{% set text = case.output or '' %}
+  <span class="answer {{'right' if right else 'wrong' if case.quality_score is not none else ''}}">{{'✓' if right else '✗' if case.quality_score is not none else ''}} {{text[:90]}}{{'…' if text|length > 90}}</span>
+  {% if not text and case.reasoning %}<br><small class="answer wrong">No answer: the model used its whole output budget reasoning.</small>{% endif %}
+  {% if text|length > 90 %}<details><summary class="small">full answer ({{text|length}} chars)</summary><div class="output">{{text}}</div></details>{% endif %}
+  {% if case.reasoning %}<details><summary class="small">+ hidden reasoning ({{case.reasoning|length}} chars, billed)</summary><div class="output">{{case.reasoning}}</div></details>{% endif %}{% endif %}{% endmacro %}
+{% block content %}{% set r=saved.report %}{% set request=saved.request %}{% set e=r.economic %}
+
+{% if related.source %}<div class="notice">This report measures the <strong>analyst's proposed prompt</strong> from <a href="/investigations/{{related.source.id}}">an investigation</a> against the original baseline.</div>{% endif %}
+<ol class="flow">{% if related.source %}
+  <li class="done">Run baseline &amp; candidate</li>
+  <li class="done"><a href="/reports/{{related.source.report_id}}">Compare &amp; apply policy</a></li>
+  <li class="done"><a href="/investigations/{{related.source.id}}">Investigate</a></li>
+  <li class="done"><a href="/artifacts/{{r.candidate_id}}">Test the proposed fix</a></li>
+  <li class="current">Result</li>
+{% else %}
+  <li class="done"><a href="/artifacts/{{r.baseline_id}}">Run baseline</a></li>
+  <li class="done"><a href="/artifacts/{{r.candidate_id}}">Run candidate</a></li>
+  <li class="current">Compare &amp; apply policy</li>
+  <li class="{{'done' if related.investigations else ''}}">{% if related.investigations %}<a href="/investigations/{{related.investigations[0].id}}">Investigate</a>{% else %}Investigate{% endif %}</li>
+  <li>Test a fix</li>
+{% endif %}</ol>
+
+<h1>{{candidate.name}} <span class="muted" style="font-weight:400">vs</span> {{baseline.name}}</h1>
+<p class="muted">{{baseline.cases|length}} cases · model {{candidate.configuration.get('provider', '?')}}/{{candidate.configuration.get('model', '?')}} · priced with <code>{{request.pricing.version}}</code> · report <code>{{saved.id[:8]}}</code></p>
+
+{% set subject = 'The proposed fix' if related.source else 'The candidate' %}
+<div class="verdict {{r.status}}"><strong>{{r.status|replace('_', ' ')}}</strong>
+  <p>{% if r.status == 'pass' %}{{subject}} stays within every limit you set, compared with the baseline, so CostGuard would let it ship.
+  {% elif r.status == 'fail' %}{{subject}} breaks {{r.policy.violations|length}} of your limits, so CostGuard would block it:{% elif r.status == 'inconclusive' %}CostGuard won't pass or fail this change because the evidence is incomplete:{% else %}No limits were set, so these numbers are informational.{% endif %}</p>
+  {% if r.policy.violations or (r.status == 'inconclusive') %}<ul>{% for v in r.policy.violations %}<li>{{v}}</li>{% endfor %}{% if r.status == 'inconclusive' %}{% for u in (r.reasons + r.policy.unknowns)|unique %}<li>{{u}}</li>{% endfor %}{% endif %}</ul>{% endif %}
+  {% if limits %}<p class="small">Your limits: {{limits|join(' · ')}}.</p>{% endif %}
+  <p class="row">{% if related.source %}<a class="button" href="/investigations/{{related.source.id}}">Back to the investigation</a>{% endif %}{% if related.investigations %}<a class="button" href="/investigations/{{related.investigations[0].id}}">Open the investigation</a>{% endif %}
+  <a class="button" href="/investigations?report_id={{saved.id}}">{{'Investigate again' if related.investigations else 'Investigate anyway' if r.status == 'pass' else 'Ask the analyst why'}}</a></p>
+</div>
+
+<section class="card"><h2>What changed</h2>
+  {% set before = baseline.configuration.get('system_prompt', '') %}{% set after = candidate.configuration.get('system_prompt', '') %}
+  {% if before != after %}<p class="muted small">System prompt, word by word: <del>removed</del> · <ins>added</ins>. Same cases, same model, same prices.</p>
+  <div class="prompts"><div><h3>Baseline · {{before.split()|length}} words</h3><div class="prompt" id="prompt-before" data-diff-left="prompt-after">{{before}}</div></div>
+  <div><h3>{{'Proposal' if related.source else 'Candidate'}} · {{after.split()|length}} words</h3><div class="prompt" id="prompt-after">{{after}}</div></div></div>
+  {% else %}<p>Both runs use the same system prompt{% if baseline.configuration.get('model') != candidate.configuration.get('model') %}, but different models: {{baseline.configuration.get('model')}} → {{candidate.configuration.get('model')}}{% endif %}. Differences below come from run-to-run model behavior.</p>{% endif %}
+</section>
+
+{% if e %}
+<div class="grid">
+  <div class="card kpi"><div class="label">Cost per request</div><div class="metric">{{e.cost_per_request_usd.candidate|usd}}</div><p>was {{e.cost_per_request_usd.baseline|usd}} · {{change(e.cost_per_request_usd)}}</p></div>
+  {% if e.monthly_projection %}<div class="card kpi"><div class="label">At {{'{:,}'.format(e.monthly_projection.requests)}} requests / month</div><div class="metric">{{e.monthly_projection.cost_usd.candidate|usd}}</div><p>was {{e.monthly_projection.cost_usd.baseline|usd}} · {{change(e.monthly_projection.cost_usd)}}</p></div>{% endif %}
+  <div class="card kpi"><div class="label">Answers correct</div><div class="metric">{% if e.quality_score %}{{(e.quality_score.candidate|float * e.quality_cases_compared)|round|int}} / {{e.quality_cases_compared}}{% else %}Unknown{% endif %}</div><p>{% if e.quality_score %}was {{(e.quality_score.baseline|float * e.quality_cases_compared)|round|int}} / {{e.quality_cases_compared}}{% else %}No paired scores{% endif %}</p></div>
+  <div class="card kpi"><div class="label">Mean latency</div><div class="metric">{{'{:,.0f}'.format(e.mean_latency_ms.candidate|float)}} ms</div><p>was {{'{:,.0f}'.format(e.mean_latency_ms.baseline|float)}} ms · {{change(e.mean_latency_ms)}}</p></div>
+</div>
+{% endif %}
+
+{% if breakdown and not breakdown.driver %}<section class="card"><h2>Cost</h2><p class="explain">Token usage and cost per case are the same on both sides.</p></section>
+{% elif breakdown %}<section class="card"><h2>Why the cost changed</h2>
+  {% if breakdown.explanation %}<p class="explain">{{breakdown.explanation|join(' ')}}</p>{% endif %}
+  <div class="table-wrap"><table><tr><th>Per case, on average</th><th>Baseline</th><th>{{'Proposal' if related.source else 'Candidate'}}</th><th>Cost change</th><th>Share of change</th></tr>
+  {% for row in breakdown.rows %}<tr><td>{{row.kind|capitalize}} tokens</td><td>{{row.tokens_before}} <small class="muted">({{row.cost_before|usd}})</small></td><td>{{row.tokens_after}} <small class="muted">({{row.cost_after|usd}})</small></td>
+    <td>{{'+' if row.cost_delta > 0}}{{row.cost_delta|usd}}</td><td><div class="row"><div class="bar"><span style="width: {{row.share}}%"></span></div> {{row.share}}%</div></td></tr>{% endfor %}</table></div>
+  <p class="muted small">Cost = tokens × price. Prices used: {% for price in breakdown.prices %}{{price.model}} at ${{price.input|num}} input / ${{price.output|num}} output per million tokens{% endfor %}.</p>
+</section>{% endif %}
+
+{% if e %}<section class="card whatif"><h2>What if prices change?</h2>
+  <p class="muted small">Reprices the tokens both runs actually used, for example local reference rates versus a cloud provider's list price. Behavior, quality and latency are held fixed: this does not predict how a different model would behave.</p>
+  <div class="grid">{% for entry in request.pricing.entries %}
+    <div><label for="wi-in-{{loop.index0}}">{{entry.provider}}/{{entry.model}}<br><span class="muted small">input USD / million tokens</span></label><input id="wi-in-{{loop.index0}}" type="number" min="0" step="any" value="{{entry.input_per_million_usd|num}}"></div>
+    <div><label for="wi-out-{{loop.index0}}"><br><span class="muted small">output USD / million tokens</span></label><input id="wi-out-{{loop.index0}}" type="number" min="0" step="any" value="{{entry.output_per_million_usd|num}}"></div>{% endfor %}
+    <div><label for="wi-requests">Requests per month</label><input id="wi-requests" type="number" min="0" step="1" value="{{e.monthly_projection.requests if e.monthly_projection else 100000}}"></div>
+    <div><button type="button" id="wi-run" onclick="whatIf()">Recalculate</button></div>
+  </div>
+  <div id="wi-result" class="table-wrap"></div>
+</section>{% endif %}
+
+{% if cases %}<section class="card"><h2>Case by case</h2>
+  <p class="muted small">Each support message was sent with both prompts. ✓ means the answer matched the expected label.</p>
+  <div class="table-wrap"><table>
+  <tr><th>Message</th><th>Expected</th><th>Baseline answer</th><th>{{'Proposal' if related.source else 'Candidate'}} answer</th><th>Output tokens</th><th>Cost</th></tr>
+  {% for row in cases %}<tr id="case-{{row.case_id}}">
+    <td><strong>{{row.case_id}}</strong>{% if row.input %}<br><small class="muted">{{row.input.prompt[:120]}}</small>{% endif %}</td>
+    <td>{% if row.input and row.input.expected_text %}<span class="answer">{{row.input.expected_text}}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+    <td>{{answer(row.before, row.input)}}</td>
+    <td>{{answer(row.after, row.input)}}</td>
+    <td>{{row.before_tokens if row.before_tokens is not none else '?'}} → <strong>{{row.after_tokens if row.after_tokens is not none else '?'}}</strong></td>
+    <td>{% if row.cost %}{{row.cost.baseline|usd}} → <strong>{{row.cost.candidate|usd}}</strong><br>{{change(row.cost)}}{% else %}<span class="muted">not comparable</span>{% endif %}</td>
+  </tr>{% endfor %}
+  </table></div>
+</section>{% endif %}
+
+<details class="card"><summary><strong>Execution details</strong> <span class="muted small">calls, retries, steps, p95</span></summary>
+  <p>Per case: model calls {{r.model_calls.baseline|num}} → {{r.model_calls.candidate|num}} · retries {{r.retries.baseline|num}} → {{r.retries.candidate|num}} · tool steps {{r.tool_steps.baseline|num}} → {{r.tool_steps.candidate|num}} · agent steps {{r.agent_steps.baseline|num}} → {{r.agent_steps.candidate|num}}</p>
+  <p>P95 latency {{('{:,.0f}'.format(r.p95_latency_ms.candidate|float) ~ ' ms') if r.p95_latency_ms else 'unknown'}} · p95 case cost {{r.p95_case_cost_usd.candidate|usd if r.p95_case_cost_usd else 'unknown'}}</p>
+  {% if e %}<p class="muted small">Assumptions: {{e.assumptions|join(' ')}}</p>{% endif %}
+  <p><a href="/artifacts/{{r.baseline_id}}">Baseline run</a> · <a href="/artifacts/{{r.candidate_id}}">{{'Proposal' if related.source else 'Candidate'}} run</a> · <a href="/api/v1/comparisons/{{saved.id}}">JSON report</a></p>
+</details>
+<script>
+const reportPricing={{request.pricing|tojson}}, runs={{[r.baseline_id, r.candidate_id]|tojson}};
+const usd=v=>{const n=Number(v);return n>=1?'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'$'+Number(n.toPrecision(3)).toString();};
+async function whatIf(){
+  const out=document.getElementById('wi-result');const button=document.getElementById('wi-run');button.disabled=true;
+  try{
+    const entries=reportPricing.entries.map((entry,i)=>({...entry,
+      input_per_million_usd:document.getElementById('wi-in-'+i).value,output_per_million_usd:document.getElementById('wi-out-'+i).value}));
+    const requests=Number(document.getElementById('wi-requests').value);
+    const body=id=>JSON.stringify({artifact_id:id,monthly_requests:requests,
+      pricing:{version:'what-if',source:'Entered on the report page',entries}});
+    const [before,after]=await Promise.all(runs.map(async id=>{const r=await fetch('/api/v1/scenarios',{method:'POST',headers:{'Content-Type':'application/json'},body:body(id)});
+      const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'Check the prices');if(d.status!=='hypothetical')throw Error('Cannot reprice: '+d.reason);return d;}));
+    const b=Number(before.cost_per_request_usd.candidate), c=Number(after.cost_per_request_usd.candidate);
+    const mb=Number(before.monthly_cost_usd.candidate), mc=Number(after.monthly_cost_usd.candidate);
+    const change=b?((c-b)/b*100).toFixed(1)+'%':'n/a';
+    out.innerHTML=`<table><tr><th>At these prices</th><th>Baseline</th><th>{{'Proposal' if related.source else 'Candidate'}}</th><th>Difference</th></tr>
+      <tr><td>Per request</td><td>${usd(b)}</td><td>${usd(c)}</td><td>${c>=b?'+':''}${change}</td></tr>
+      <tr><td>Per month (${requests.toLocaleString('en-US')} requests)</td><td>${usd(mb)}</td><td>${usd(mc)}</td><td><strong>${mc>=mb?'+':'−'}${usd(Math.abs(mc-mb))}</strong> per month</td></tr></table>
+      <p class="muted small">Measured usage, repriced. The verdict above still uses the report's own prices.</p>`;
+  }catch(error){out.innerHTML='<p class="notice"></p>';out.firstChild.textContent=error.message;}
+  button.disabled=false;
+}
+</script>
+{% endblock %}

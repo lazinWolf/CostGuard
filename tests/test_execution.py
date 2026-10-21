@@ -1,3 +1,4 @@
+import json
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
@@ -56,6 +57,18 @@ class ExecutionTests(unittest.TestCase):
         result = compare_artifacts(left, right, left.pricing)
         self.assertEqual(result.status, "inconclusive")
 
+    def test_gate_markdown_states_verdict_and_metrics(self):
+        from costguard.__main__ import _markdown
+        left, right = artifact("baseline"), artifact("candidate", 2000)
+        report = compare_artifacts(left, right, left.pricing,
+                                   ComparisonPolicy(max_cost_increase_percent=10), 1000)
+        text = _markdown(report)
+        self.assertIn("### candidate vs baseline", text)
+        self.assertIn("❌ FAIL", text)
+        self.assertIn("| Cost per request (USD) | 0.01 | 0.02 | +100% |", text)
+        self.assertIn("| Monthly cost at 1,000 requests (USD) | 10.00 | 20.00 | +100% |", text)
+        self.assertIn("| Mean latency (ms) | 100 | 100 | 0% |", text)
+
     def test_scenario_rejects_failed_evidence(self):
         run = artifact("failed")
         run.cases[0].status = "error"
@@ -90,12 +103,18 @@ class ExecutionTests(unittest.TestCase):
             "pricing": artifact("price").pricing.model_dump(),
         })
 
+        bodies = []
+
         def response(request):
+            bodies.append(json.loads(request.content))
             return httpx.Response(200, json={"choices": [{"message": {"content": "hello"}}],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 1}})
 
         with httpx.Client(base_url="http://test", transport=httpx.MockTransport(response)) as client:
             case = run_case(spec, spec.cases[0], client)
+            run_case(spec.model_copy(update={"temperature": 0}), spec.cases[0], client)
+        self.assertNotIn("temperature", bodies[0])  # The provider default applies unless set.
+        self.assertEqual(bodies[1]["temperature"], 0)
         self.assertEqual(case.status, "ok")
         self.assertEqual(case.calls[0].input_tokens, 10)
         self.assertEqual(case.quality_score, Decimal("1"))
@@ -115,6 +134,98 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(captured.cases[0].calls[0].input_tokens, 10)
         self.assertEqual(captured.cases[0].steps[1].kind, "tool")
         self.assertEqual(captured.cases[0].quality_score, Decimal("1"))
+
+    def test_partial_quality_coverage_is_inconclusive(self):
+        def two_cases(name, scored_second):
+            run = artifact(name)
+            second = run.cases[0].model_copy(update={"case_id": "two"})
+            if not scored_second:
+                second = second.model_copy(update={"quality_score": None, "evaluator": None})
+            run.cases.append(second)
+            return run
+        left, right = two_cases("baseline", True), two_cases("candidate", False)
+        result = compare_artifacts(left, right, left.pricing,
+                                   ComparisonPolicy(min_candidate_quality_score=1))
+        self.assertEqual(result.status, "inconclusive")
+        self.assertIn("quality scores cover only 1 of 2 cases", result.policy.unknowns)
+        complete = compare_artifacts(left, two_cases("candidate", True), left.pricing,
+                                     ComparisonPolicy(min_candidate_quality_score=1))
+        self.assertEqual(complete.status, "pass")
+
+    def test_money_is_serialized_exactly(self):
+        result = compare_artifacts(artifact("baseline"), artifact("candidate", 2000), artifact("p").pricing)
+        delta = result.model_dump(mode="json")["economic"]["cost_per_request_usd"]["delta"]
+        self.assertEqual(delta, "0.01000000")
+        same = compare_artifacts(artifact("baseline"), artifact("candidate"), artifact("p").pricing)
+        self.assertEqual(same.model_dump(mode="json")["economic"]["cost_per_request_usd"]["delta"], "0.00000000")
+
+    def _spec(self, **updates):
+        values = {"suite_id": "suite", "name": "run", "provider": "test", "model": "echo",
+                  "cases": [{"case_id": "one", "prompt": "hello", "expected_text": "billing"}],
+                  "pricing": artifact("price").pricing.model_dump(),
+                  "limits": {"max_attempts": 3}}
+        values.update(updates)
+        return ExperimentSpec.model_validate(values)
+
+    def test_client_errors_are_not_retried(self):
+        spec, requests = self._spec(), []
+        def response(request):
+            requests.append(request)
+            return httpx.Response(401, json={"error": "bad key"})
+        with httpx.Client(base_url="http://test", transport=httpx.MockTransport(response)) as client:
+            case = run_case(spec, spec.cases[0], client)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(case.error, "model request failed: HTTP 401")
+
+    def test_server_errors_are_retried_and_output_recorded(self):
+        spec, requests = self._spec(evaluator="normalized"), []
+        def response(request):
+            requests.append(request)
+            if len(requests) == 1:
+                return httpx.Response(503)
+            return httpx.Response(200, json={"choices": [{"message": {"content": " **Billing.**\n"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 3}})
+        with httpx.Client(base_url="http://test", transport=httpx.MockTransport(response)) as client:
+            case = run_case(spec, spec.cases[0], client)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(case.quality_score, Decimal("1"))
+        self.assertEqual(case.evaluator, "normalized:v1")
+        self.assertEqual(case.output, "**Billing.**")
+
+    def test_rate_limited_requests_wait_and_are_not_counted_as_calls(self):
+        spec, requests = self._spec(), []
+        def response(request):
+            requests.append(request)
+            if len(requests) == 1:
+                return httpx.Response(429, headers={"retry-after": "0"})
+            return httpx.Response(200, json={"choices": [{"message": {"content": "billing"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 1}})
+        with httpx.Client(base_url="http://test", transport=httpx.MockTransport(response)) as client:
+            case = run_case(spec, spec.cases[0], client)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(case.calls), 1)
+        self.assertEqual(case.calls[0].attempt, 1)
+        self.assertEqual(case.status, "ok")
+        self.assertEqual(case.calls[0].tags, {"rate_limit_wait_ms": "0"})
+
+    def test_rate_limit_wait_is_bounded(self):
+        from costguard import ratelimit
+        waits = []
+        with httpx.Client(base_url="http://test", transport=httpx.MockTransport(
+                lambda request: httpx.Response(429, headers={"x-ratelimit-reset-tokens": "1m0.5s"}))) as client:
+            response = ratelimit.post(client, "/v1/chat/completions", json={}, timeout=1,
+                                      sleep=waits.append, max_wait=150)
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(waits, [60.5, 60.5])
+
+    def test_exact_evaluator_rejects_decorated_answers(self):
+        spec = self._spec()
+        def response(request):
+            return httpx.Response(200, json={"choices": [{"message": {"content": "Billing."}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 3}})
+        with httpx.Client(base_url="http://test", transport=httpx.MockTransport(response)) as client:
+            case = run_case(spec, spec.cases[0], client)
+        self.assertEqual(case.quality_score, Decimal("0"))
 
     def test_python_hook_marks_missing_usage(self):
         recorder = ArtifactRecorder(suite_id="suite", name="hook", pricing=artifact("price").pricing)

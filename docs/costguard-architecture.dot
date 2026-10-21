@@ -1,0 +1,67 @@
+// What the repository implements today. The intended long-term workflow is costguard-workflow.dot.
+// Render: dot -Tsvg docs/costguard-architecture.dot -o docs/costguard-architecture.svg
+digraph CostGuardArchitecture {
+  graph [
+    rankdir=LR,
+    bgcolor="#101820",
+    pad="0.35",
+    nodesep="0.45",
+    ranksep="0.9",
+    fontname="DejaVu Sans",
+    fontcolor="#DAECFA",
+    fontsize=14,
+    labeljust=l
+  ];
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#335B7A",
+    fillcolor="#073458",
+    fontcolor="#DAECFA",
+    fontname="DejaVu Sans",
+    fontsize=14,
+    margin="0.22,0.14",
+    penwidth=1.2
+  ];
+  edge [
+    color="#7E98AA",
+    fontcolor="#A9C1D3",
+    fontname="DejaVu Sans",
+    fontsize=11,
+    arrowsize=0.65,
+    penwidth=1.2
+  ];
+
+  subgraph cluster_people {
+    label="Who asks";
+    style="rounded,dashed";
+    color="#335B7A";
+    browser [label="Browser UI\nrun demo · reports · investigations"];
+    ci [label="CI pipeline / CLI\ncostguard gate → exit 0 · 1 · 2"];
+    agent [label="Coding agent\nread-only MCP queries"];
+  }
+
+  subgraph cluster_stack {
+    label="Docker Compose stack (localhost only)";
+    style="rounded";
+    color="#43886B";
+    app [label="CostGuard app · FastAPI\nUI · API · economic engine\nprices · policy · what-if repricing", fillcolor="#10527B"];
+    runner [label="Runner\n① runs baseline & candidate cases\n③ bounded analyst tool loop", fillcolor="#10527B"];
+    db [label="PostgreSQL · Alembic\nruns · outputs · reports\njobs · investigations"];
+    bifrost [label="Bifrost gateway\nproviders · keys · routes"];
+    ollama [label="Ollama (local GPU)\nLlama 3.2 · Granite · Qwen"];
+  }
+
+  cloud [label="Cloud providers\nGroq · any OpenAI-compatible", fillcolor="#3A315D", color="#6C6291"];
+  decision [label="Ship · revise · investigate\npass / fail / inconclusive", fillcolor="#146144", color="#43886B"];
+
+  browser -> app [label="start runs, read reports"];
+  ci -> app [label="same engine on\nrecorded evidence", style=dashed];
+  agent -> db [label="MCP server", style=dashed];
+  app -> db [label="queue jobs\n② compare & gate"];
+  runner -> db [label="claim jobs\nsave evidence"];
+  runner -> bifrost [label="workload and\nanalyst calls"];
+  bifrost -> ollama;
+  bifrost -> cloud;
+  app -> decision [label="④ fix measured\nvs original baseline"];
+}

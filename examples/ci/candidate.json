@@ -1,0 +1,331 @@
+{
+  "schema_version": 1,
+  "artifact_id": "a62edc1f-4082-4de7-a837-787fcf2fad29",
+  "suite_id": "support-triage",
+  "name": "triage-candidate-helpful-prompt",
+  "configuration": {
+    "kind": "prompt",
+    "model": "qwen/qwen3.8-27b",
+    "limits": "{\"timeout_seconds\":180,\"max_output_tokens\":400,\"max_attempts\":1,\"max_tool_calls\":0,\"max_steps\":4,\"stop_after_usd\":null}",
+    "provider": "groq",
+    "system_prompt": "You are a friendly and thorough customer support assistant. For every customer message: first restate the customer's problem in your own words, then explain step by step which support category fits best and why, then suggest a helpful first reply the support agent could send, and finally state the category. The categories are billing, technical, account, and shipping. Be empathetic and complete."
+  },
+  "pricing": {
+    "version": "reference-rates-2026-10",
+    "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+    "entries": [
+      {
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b",
+        "input_per_million_usd": "0.80",
+        "output_per_million_usd": "4.00"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "duplicate-charge",
+      "status": "ok",
+      "latency_ms": "749.8519",
+      "calls": [
+        {
+          "call_id": "d8545239-e051-442e-9a50-988510417510",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 110,
+          "output_tokens": 334,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "747.8496",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "747.8496",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I understand how frustrating and stressful it can be to deal with an unexpected double charge on your bank statement. **Problem Restatement:** The customer is reporting that they were billed twice for their subscription service this month and is requesting a refund for the duplicate transaction.\n\n**Category Analysis:**\nTo determine the best support category, we need to look at the nature of the issue. The customer is not reporting a software bug, login error, or performance issue, which would point to a *technical* category. They are not asking to change their profile information, email address, or recover access, which would fall under *account* management. There is no mention of physical goods being delayed or lost, so it is not a *shipping* issue. The core of the complaint involves a financial transaction error\u2014specifically, an unintended charge. Any issue related to payments, invoices, refunds, or subscription costs is squarely within the domain of *billing*. Therefore, the *billing* category is the most accurate fit because the resolution requires reviewing transaction history and issuing a financial credit.\n\n**Suggested First Reply:**\n\"Hi there, I am so sorry to hear that you were charged twice for your subscription this month. I completely understand how unsettling that is, and I want to help you resolve this immediately. I have pulled up your account details and can see the duplicate transaction. I am processing a refund for the extra charge right now, which should appear back on your original payment method within 3-5 business days, depending on your bank. Please let me know if you have any other questions or if you need assistance with anything else!\"\n\n**Category:** billing",
+      "reasoning": null
+    },
+    {
+      "case_id": "upload-crash",
+      "status": "ok",
+      "latency_ms": "878.1492",
+      "calls": [
+        {
+          "call_id": "21ebd293-6762-416b-b335-fa514477225f",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 110,
+          "output_tokens": 400,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "875.6653",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "875.6653",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I am sorry to hear that you are experiencing this frustration. Let's take a closer look at your situation.\n\n**Restatement of the Problem**\nThe user is reporting that the application becomes unstable and shuts down (crashes) consistently whenever they attempt to upload a photo file that exceeds the 5 MB size limit.\n\n**Step-by-Step Category Analysis**\n1.  **Analyze the Nature of the Issue**: The problem described is a software malfunction (a crash) triggered by a specific input (a large file). This indicates a bug in the app\u2019s code or a failure in how the app handles data processing.\n2.  **Evaluate \"Billing\"**: The issue is not related to payments, subscriptions, invoicing, or refunds. Therefore, it is not a billing issue.\n3.  **Evaluate \"Account\"**: The user is not locked out, asking to reset a password, or having trouble with two-factor authentication. The user can access the app; it just fails during a specific action. Therefore, it is not an account issue.\n4.  **Evaluate \"Shipping\"**: This category is exclusively for physical goods, delivery times, tracking numbers, and logistics. Since this involves a digital application, it is not a shipping issue.\n5.  **Evaluate \"Technical\"**: This category covers software bugs, app crashes, error messages, compatibility issues, and performance problems. Since the app is failing to execute a function due to a code or infrastructure limitation (the file size limit causing a crash), this fits squarely into the technical domain.\n\n**Suggested Support Agent Reply**\n\"Hi there, I\u2019m really sorry to hear that you\u2019re running into crashes when trying to upload your photos. That sounds incredibly frustrating, especially when you\u2019re just trying to share your images! To help us get this resolved, could you please let me know which operating system and version you are currently using (e.g., iOS 14.",
+      "reasoning": null
+    },
+    {
+      "case_id": "change-email",
+      "status": "ok",
+      "latency_ms": "774.4981",
+      "calls": [
+        {
+          "call_id": "6a928d7a-fd7b-439d-99f8-f6d5297ee76c",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 112,
+          "output_tokens": 357,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "772.598",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "772.598",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I understand that you are looking for instructions on how to update the email address currently linked to your profile because you no longer have access to or use the previous one.\n\nTo determine the appropriate support category, let's break down the nature of your request. You are not asking about payment methods, invoices, or charges, which rules out the **billing** category. While technical issues can sometimes stem from profile settings, you are not reporting a bug, crash, or error message; rather, you are requesting a specific change to your user preferences, which moves this away from **technical** support. It is also unrelated to the delivery status, tracking, or physical movement of a product, so **shipping** is not the correct fit. Instead, you are asking to modify core identity and authentication details (your login credentials and contact information) associated with your user identity. Managing login data, profile settings, and contact information is the specific domain of **account** support.\n\nHere is a suggested first reply a support agent could send:\n\n\"Hello! I understand you would like to update the email address on your profile. To ensure the security of your account, we cannot change this information via email support. Please log in to your account, navigate to the 'Account Settings' or 'Profile' section, and look for the 'Security' or 'Contact Information' tab. There, you should find an option to edit your email address. You may be required to enter your current password or verify the change via a code sent to your new email address. If you have completely lost access to your old email and cannot log in, please let me know, and I can guide you through our account recovery process. Let me know if you need any further assistance!\"\n\nCategory: account",
+      "reasoning": null
+    },
+    {
+      "case_id": "missing-package",
+      "status": "ok",
+      "latency_ms": "1800.8379",
+      "calls": [
+        {
+          "call_id": "5f23e99d-4872-4a27-b8d4-6245c26d3a5a",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 108,
+          "output_tokens": 335,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "1798.8783",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "1798.8783",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "First, let's restate the customer's problem: The customer is concerned because their package shows a delivery status from yesterday, but they have not physically received it.\n\nNext, let's break down which support category fits best and why:\n*   **Billing:** This category deals with charges, refunds, and payment issues. While a missing item might lead to a refund later, the immediate issue is about the movement of goods, not money.\n*   **Technical:** This category covers website errors, app bugs, or device connectivity. There is no indication that the issue stems from software malfunction, but rather a physical logistics failure.\n*   **Account:** This category handles login issues, password resets, or profile updates. The customer is not having trouble accessing their account.\n*   **Shipping:** This category covers order tracking, delivery timelines, carrier issues, and lost packages. Since the core issue is the discrepancy between the tracking status (\"delivered\") and the physical reality (item not received), this is clearly a logistics problem involving the shipping carrier. Therefore, shipping is the correct fit.\n\nHere is a suggested helpful first reply the support agent could send:\n\n\"Hi there, I am so sorry to hear that your package hasn't shown up even though it was marked as delivered. I know how frustrating it is to wait for an order and have it not arrive at your door. To help you get this resolved quickly, could you please provide your order number? Once I have that, I can check the specific tracking details and coordinate with our carrier to locate your item or initiate a replacement if it appears to be lost.\"\n\nCategory: shipping",
+      "reasoning": null
+    },
+    {
+      "case_id": "vat-invoice",
+      "status": "ok",
+      "latency_ms": "24953.9935",
+      "calls": [
+        {
+          "call_id": "898ac952-8e58-42ec-a30a-414ac7a93720",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 109,
+          "output_tokens": 400,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "24952.0691",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "24952.0691",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "Here is the breakdown of the customer\u2019s issue and the recommended support approach:\n\n**Restated Problem**\nThe customer is reporting that Value Added Tax (VAT) was incorrectly applied to their recent invoice, despite the fact that they confirmed they had entered their valid company tax ID during the checkout process. They are expecting the VA to be exempted based on their provided tax information.\n\n**Support Category Analysis**\nTo determine the best fit, we look at the nature of the discrepancy:\n1.  **Shipping:** This category deals with delivery times, lost packages, or incorrect addresses. The issue here is strictly financial, so this category does not apply.\n2.  **Technical:** While the tax ID was entered on the website, the customer states this was done correctly. The issue isn't that the field was broken or the page failed to load, but rather that the *backend* processing logic did not recognize or apply the tax exemption. Therefore, it is not primarily a technical glitch report, but a pricing error.\n3.  **Account:** This category usually covers login issues, profile updates, or password resets. Although a tax ID is part of account details, the immediate problem is an incorrect charge on a specific transaction, not an inability to access the account or manage profile settings.\n4.  **Billing:** This category covers invoices, payments, refunds, and tax calculations. Since the core issue is that an invoice contains an unexpected fee (VAT) and requires verification of tax details to potentially issue a credit or corrected invoice, this is definitively a billing matter.\n\n**Suggested First Reply**\n\"Hi there,\n\nI\u2019m sorry to hear that you were charged VAT despite providing your company\u2019s tax ID during checkout. I understand how frustrating it is to be billed incorrectly, especially when you followed the correct procedure.\n\nI would be happy to look into this for you. Could you please provide your order number and the specific tax ID you",
+      "reasoning": null
+    },
+    {
+      "case_id": "blank-dashboard",
+      "status": "ok",
+      "latency_ms": "22816.5291",
+      "calls": [
+        {
+          "call_id": "14a7ef68-568e-4690-ac1e-9b68e13a035e",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 109,
+          "output_tokens": 357,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "22814.5669",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "22814.5669",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "First, let me restate the customer's problem in my own words: The customer is experiencing a software issue where the application's dashboard is completely blank (showing a white screen) specifically in Firefox, and this problem began immediately following a recent software update this morning.\n\nNext, let\u2019s analyze which support category fits best. The customer is reporting a malfunction in the user interface that occurs after a software change. The fact that it is happening in a specific browser (Firefox) right after an update strongly indicates a front-end code bug, a caching issue, or a compatibility error between the new update and the browser. This is not related to money (billing), user credentials or settings (account), or physical goods (shipping). Therefore, this is clearly a technical issue requiring engineering or technical support to investigate the code or browser compatibility.\n\nHere is a suggested first reply the support agent could send:\n\n\"Hello, thank you for reaching out to us. I\u2019m sorry to hear that your dashboard is appearing as a blank white page in Firefox since this morning\u2019s update. I understand how frustrating it is to be unable to access your data, especially when you know everything was working before the update.\n\nTo help us investigate this technical issue, could you please try the following quick troubleshooting steps:\n1. Clear your browser\u2019s cache and cookies for our site and reload the page.\n2. Try opening the dashboard in an incognito/private window in Firefox.\n3. If possible, let us know if the dashboard loads correctly in other browsers (like Chrome or Edge) to help us confirm if this is Firefox-specific.\n\nPlease let me know if the issue persists after these steps so we can escalate this to our technical team for a deeper look.\"\n\nCategory: technical",
+      "reasoning": null
+    },
+    {
+      "case_id": "delete-account",
+      "status": "ok",
+      "latency_ms": "22909.1055",
+      "calls": [
+        {
+          "call_id": "6e402b86-0066-44d1-b8d9-053724d2a00d",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 108,
+          "output_tokens": 400,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "22907.0968",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "22907.0968",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "**Restatement of the Problem**\nThe customer is requesting the complete and permanent erasure of their user account along with all personal data and history stored within our systems. This is a request for total data removal rather than a temporary suspension or standard deletion.\n\n**Step-by-Step Category Analysis**\nTo determine the correct category, we must look at the nature of the action requested:\n\n1.  **Eliminate Billing:** The user is not asking for a refund, a dispute over charges, or a change in payment methods. Therefore, this is not a billing issue.\n2.  **Eliminate Shipping:** The user is not inquiring about the status of a package, a missing item, or a delivery delay. There is no physical goods component to this query. Therefore, this is not a shipping issue.\n3.  **Differentiate between Technical and Account:**\n    *   *Technical* issues typically involve troubleshooting software glitches, login errors, app crashes, or hardware connectivity problems. While removing data is a technical process, the user's intent is not to fix a bug or an error.\n    *   *Account* issues involve the management of the user's digital identity and presence on the platform. This includes creating passwords, updating profile information, recovering access, and most notably, **account lifecycle management** (which includes signing up, deactivating, and permanently closing/deleting an account).\n4.  **Conclusion:** Since the request pertains to the existence and data retention of the user\u2019s profile itself, it falls squarely under the management of the user's account status.\n\n**Suggested First Reply**\n\"Thank you for reaching out. I understand that you would like to permanently delete your account and have all your personal data removed from our systems. I can certainly help guide you through the steps to ensure your account is fully wiped and your privacy is respected. Could you please confirm your email address associated with the account so I can verify",
+      "reasoning": null
+    },
+    {
+      "case_id": "express-upgrade",
+      "status": "ok",
+      "latency_ms": "21740.7334",
+      "calls": [
+        {
+          "call_id": "8ef9fb4f-fd42-480c-946d-a5279d45fa11",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 108,
+          "output_tokens": 311,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "21738.7467",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "21738.7467",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "**Restating the Customer's Problem**\nThe customer is concerned that their current order has not yet been dispatched. They are inquiring about the possibility of changing their shipping method to express delivery, likely to ensure the package arrives sooner.\n\n**Determining the Support Category**\nTo determine the best category, we need to look at the core of the request. The issue revolves entirely around the logistics and status of a physical item the customer has purchased.\n1.  **Billing:** This is not a concern about payment methods, refunds, or invoices, so billing is incorrect.\n2.  **Technical:** This is not related to software bugs, app crashes, or website functionality, so technical support is not the fit.\n3.  **Account:** While this involves a specific user\u2019s order, \"account\" issues typically refer to login problems, password resets, or profile management.\n4.  **Shipping:** The customer is explicitly asking about the shipping status (\"hasn't shipped\") and the shipping method (\"express delivery\"). Since the entire interaction centers on the movement of the goods, this clearly falls under shipping.\n\n**Suggested First Reply**\n\"Hi there! Thanks for reaching out. I\u2019d be happy to help with your delivery preference. Since your order hasn\u2019t shipped yet, we may be able to upgrade it to express delivery for you. Could you please provide your order number? I\u2019ll check the status immediately and let you know if we can make that switch for you.\"\n\n**Category**\nShipping",
+      "reasoning": null
+    }
+  ]
+}

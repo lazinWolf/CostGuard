@@ -2,19 +2,18 @@
 
 import json
 import os
-from decimal import Decimal
 from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
-from . import db
-from .analysis import _compare, _mean
-from .economics import case_cost, compare_artifacts
+from . import db, real_demo
+from .economics import compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings, InvestigationInput
 from .models import ComparisonPolicy, PricingCatalog, Schema
+from .real_demo import RealDemoInput
 
 router = APIRouter(prefix="/api/v1")
 
@@ -48,6 +47,12 @@ def start_demo():
     return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
             "pricing": specs[0].pricing.model_dump(mode="json"),
             "policy": {"max_cost_increase_percent": 10, "min_candidate_quality_score": 1}}
+
+
+@router.post("/demo/real", status_code=202)
+def start_real_demo(data: RealDemoInput):
+    """Run the support-triage suite on a gateway model you choose; may incur provider charges."""
+    return real_demo.start(data)
 
 
 @router.post("/investigations", status_code=202)
@@ -135,13 +140,14 @@ def gateway_status():
     from .investigation_worker import gateway_headers
     url = os.environ.get("GATEWAY_URL", "http://bifrost:8080")
     try:
-        with httpx.Client(timeout=3, headers=gateway_headers()) as client:
+        # The first listing can be slow while the gateway queries every provider.
+        with httpx.Client(timeout=10, headers=gateway_headers()) as client:
             response = client.get(f"{url}/v1/models")
             response.raise_for_status()
             models = response.json().get("data", [])
         return {"status": "connected", "models": [m.get("id") for m in models],
                 "settings_url": os.environ.get("BIFROST_PUBLIC_URL", "http://localhost:8080")}
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, ValueError):
         return {"status": "unavailable", "models": [], "settings_url": os.environ.get("BIFROST_PUBLIC_URL", "http://localhost:8080")}
 
 
@@ -258,18 +264,4 @@ def scenario(data: ScenarioInput):
     saved = db.get_artifact(data.artifact_id)
     if saved is None:
         raise HTTPException(404, "artifact not found")
-    if (any(case.status != "ok" for case in saved.cases)
-            or any(call.usage_source in {"missing", "estimated"}
-                   for case in saved.cases for call in case.calls)):
-        return {"status": "inconclusive", "reason": "failed cases or unobserved usage"}
-    original = [case_cost(case, saved.pricing) for case in saved.cases]
-    hypothetical = [case_cost(case, data.pricing) for case in saved.cases]
-    if any(cost is None for cost in original + hypothetical):
-        return {"status": "inconclusive", "reason": "missing usage or pricing"}
-    metric = _compare(_mean(original), _mean(hypothetical), Decimal("0.00000001"))
-    monthly = _compare(_mean(original) * data.monthly_requests,
-                       _mean(hypothetical) * data.monthly_requests,
-                       Decimal("0.00000001"))
-    return {"status": "hypothetical", "cost_per_request_usd": metric,
-            "monthly_cost_usd": monthly, "pricing_versions": [saved.pricing.version, data.pricing.version],
-            "assumption": "Observed usage and execution behavior remain unchanged; quality and latency are not predicted."}
+    return reprice(saved, data.pricing, data.monthly_requests)

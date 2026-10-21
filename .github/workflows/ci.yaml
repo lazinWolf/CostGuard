@@ -21,6 +21,9 @@ jobs:
       - name: Unit tests
         run: docker compose --profile demo run --rm --no-deps app python -m unittest discover -v
 
+      - name: Cost gate on recorded evidence
+        run: bash examples/ci/gate.sh
+
       - name: Start demo stack
         run: docker compose --profile demo up -d --wait
 

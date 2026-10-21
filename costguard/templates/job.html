@@ -1,3 +1,57 @@
-{% extends "base.html" %}{% block title %}Job · CostGuard{% endblock %}
-{% block content %}<h1>Experiment run</h1><div class="card"><p>Job <code>{{job.id}}</code></p><p>State: <span id="state" class="status {{job.state}}">{{job.state}}</span></p><p>Progress: <span id="progress">{{job.progress}} / {{job.total}}</span></p><p id="error" class="muted">{{job.error or ''}}</p><p id="result">{% if job.artifact_id %}<a href="/artifacts/{{job.artifact_id}}">View execution</a>{% endif %}</p><button onclick="cancelJob()">Cancel pending work</button></div>
-<script>async function poll(){const r=await fetch('/api/v1/jobs/{{job.id}}');const j=await r.json();document.getElementById('state').textContent=j.state;document.getElementById('progress').textContent=j.progress+' / '+j.total;document.getElementById('error').textContent=j.error||'';if(j.artifact_id)document.getElementById('result').innerHTML='<a href="/artifacts/'+j.artifact_id+'">View execution</a>';if(['queued','running'].includes(j.state))setTimeout(poll,1500);}async function cancelJob(){await fetch('/api/v1/jobs/{{job.id}}/cancel',{method:'POST'});poll();}poll();</script>{% endblock %}
+{% extends "base.html" %}{% block title %}Run · CostGuard{% endblock %}
+{% block content %}
+<h1>{{job.name or 'Experiment run'}}</h1>
+<p class="muted">Suite {{job.suite_id}} · model <code>{{job.model}}</code> · job <code>{{job.id[:8]}}</code></p>
+
+<div class="card">
+  <div class="row"><span id="state" class="pill {{job.state}}">{{job.state}}</span> <strong id="progress-text">{{job.progress}} of {{job.total}} cases</strong> <span id="totals" class="muted"></span></div>
+  <div class="bar" style="margin:.8rem 0; height:.7rem"><span id="progress-bar" style="width: {{(100 * job.progress / job.total)|round|int if job.total else 0}}%; background:#176a50"></span></div>
+  <p id="explain" class="explain">{% if job.state in ['queued'] %}Waiting for the runner. Jobs run one at a time.{% elif job.state == 'running' %}Sending each case to the model and recording the answer, tokens and latency.{% elif job.state == 'completed' %}All cases ran. The run is saved and can be compared.{% else %}{{job.error or 'The run stopped.'}}{% endif %}</p>
+  <p class="row"><span id="result">{% if job.artifact_id %}<a class="button" href="/artifacts/{{job.artifact_id}}">View saved run</a>{% endif %}</span>
+  {% if job.state in ['queued', 'running'] %}<button id="cancel" onclick="cancelJob()">Cancel remaining cases</button>{% endif %}</p>
+</div>
+
+<details class="card"><summary><strong>System prompt</strong> <span class="muted small">{{(job.system_prompt or '').split()|length}} words</span></summary><div class="prompt">{{job.system_prompt}}</div></details>
+
+<section class="card"><h2>Cases</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Message</th><th>Expected</th><th>Model answer</th><th>Tokens in / out</th><th>Cost</th><th>Time</th></tr></thead>
+    <tbody id="cases"></tbody>
+  </table></div>
+  <p id="waiting" class="muted">Cases appear here as they finish.</p>
+</section>
+
+<script>
+const jobId={{job.id|tojson}};
+const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function render(job){
+  document.getElementById('state').textContent=job.state;document.getElementById('state').className='pill '+job.state;
+  document.getElementById('progress-text').textContent=job.progress+' of '+job.total+' cases';
+  document.getElementById('progress-bar').style.width=(job.total?100*job.progress/job.total:0)+'%';
+  const rows=job.cases||[];
+  const cost=rows.reduce((sum,c)=>sum+(c.cost_usd?Number(c.cost_usd):0),0);
+  const out=rows.reduce((sum,c)=>sum+(c.output_tokens||0),0);
+  const correct=rows.filter(c=>c.quality===1).length, scored=rows.filter(c=>c.quality!==null).length;
+  document.getElementById('totals').textContent=rows.length?`· ${scored?correct+' / '+scored+' correct · ':''}${out} output tokens · $${cost.toFixed(6)}${[`queued`,`running`].includes(job.state)?` so far`:` total`}`:'';
+  const waiting=document.getElementById('waiting');waiting.hidden=rows.length>0;
+  if(!rows.length&&!['queued','running'].includes(job.state))waiting.textContent='Per-case progress was not recorded for this older run. Open the saved run for details.';
+  document.getElementById('cases').innerHTML=rows.map(c=>{
+    const mark=c.quality===1?'<span class="answer right">✓</span> ':c.quality===0?'<span class="answer wrong">✗</span> ':'';
+    const answer=c.status!=='ok'?`<span class="pill error">${esc(c.status)}</span> <small class="muted">${esc(c.error)}</small>`:
+      `${mark}<span class="answer">${esc(c.output.slice(0,140))}${c.output.length>140?'…':''}</span>`;
+    return `<tr><td><strong>${esc(c.case_id)}</strong><br><small class="muted">${esc(c.prompt.slice(0,110))}</small></td>
+      <td><span class="answer">${esc(c.expected??'–')}</span></td><td>${answer}</td>
+      <td>${c.input_tokens??'?'} / <strong>${c.output_tokens??'?'}</strong></td>
+      <td>${c.cost_usd?'$'+Number(c.cost_usd).toFixed(7):'?'}</td><td>${(c.latency_ms/1000).toFixed(1)} s</td></tr>`;}).join('');
+  if(job.artifact_id)document.getElementById('result').innerHTML='<a class="button" href="/artifacts/'+job.artifact_id+'">View saved run</a>';
+  const explain=document.getElementById('explain');
+  if(job.state==='running')explain.textContent='Sending each case to the model and recording the answer, tokens and latency.';
+  else if(job.state==='completed')explain.textContent='All cases ran. The run is saved and can be compared.';
+  else if(job.state!=='queued')explain.textContent=job.error||'The run stopped.';
+  if(!['queued','running'].includes(job.state))document.getElementById('cancel')?.remove();
+}
+async function poll(){try{const r=await fetch('/api/v1/jobs/'+jobId);const job=await r.json();render(job);if(['queued','running'].includes(job.state))setTimeout(poll,1000);}catch(e){setTimeout(poll,3000);}}
+async function cancelJob(){await fetch('/api/v1/jobs/'+jobId+'/cancel',{method:'POST'});poll();}
+render({{job|tojson}});{% if job.state in ['queued', 'running'] %}setTimeout(poll,1000);{% endif %}
+</script>
+{% endblock %}

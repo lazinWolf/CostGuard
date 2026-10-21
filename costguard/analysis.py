@@ -100,6 +100,7 @@ def _policy_result(
     baseline_cost: Decimal,
     candidate_cost: Decimal,
     quality: MetricComparison | None,
+    quality_cases: int,
 ) -> PolicyResult:
     policy = request.policy
     if policy is None or not any(value is not None for value in policy.model_dump().values()):
@@ -142,11 +143,22 @@ def _policy_result(
             unknowns.append("monthly requests are required for the monthly cost policy")
         elif candidate_cost * request.monthly_requests > policy.max_monthly_cost_usd:
             violations.append("projected monthly cost exceeds the configured limit")
-    if policy.min_candidate_quality_score is not None:
+    if policy.min_candidate_quality_score is not None or policy.max_quality_drop is not None:
+        cases = len(request.baseline.runs)
         if quality is None:
             unknowns.append("paired quality scores are required for the quality policy")
-        elif quality.candidate < policy.min_candidate_quality_score:
-            violations.append("candidate quality score is below the configured minimum")
+        elif quality_cases < cases:
+            # A mean over a scored subset cannot vouch for the unscored cases.
+            unknowns.append(f"quality scores cover only {quality_cases} of {cases} cases")
+        else:
+            if (policy.min_candidate_quality_score is not None
+                    and quality.candidate < policy.min_candidate_quality_score):
+                violations.append("candidate quality score is below the configured minimum")
+            if policy.max_quality_drop is not None and -quality.delta > policy.max_quality_drop:
+                violations.append(
+                    f"quality fell from {quality.baseline.normalize():f} to {quality.candidate.normalize():f}, "
+                    f"more than the allowed drop of {policy.max_quality_drop.normalize():f}"
+                )
 
     return PolicyResult(
         status="fail" if violations else "inconclusive" if unknowns else "pass",
@@ -247,6 +259,7 @@ def compare_workloads(request: ComparisonRequest) -> ComparisonReport:
         case_costs=case_costs,
         model_costs=model_costs,
         monthly_projection=monthly_projection,
-        policy=_policy_result(request, baseline_mean_cost, candidate_mean_cost, quality),
+        policy=_policy_result(request, baseline_mean_cost, candidate_mean_cost, quality,
+                              quality_cases_compared),
         assumptions=assumptions,
     )

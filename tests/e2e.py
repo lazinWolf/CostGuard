@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -57,7 +58,35 @@ async def check_mcp(report_id):
             assert result.content
 
 
+def wait_for(read, done, label, seconds=90):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        value = read()
+        if done(value):
+            return value
+        time.sleep(0.25)
+    raise AssertionError(f"{label} did not finish: {value}")
+
+
 def main():
+    # This runs against a live stack: keep the user's analyst settings and remove test-only rows.
+    original_analyst = db.get_analyst_settings()
+    stale_id = str(uuid4())
+    try:
+        run(stale_id)
+    finally:
+        with db.session_scope() as session:
+            stale = session.get(db.InvestigationRow, stale_id)
+            if stale is not None:
+                session.delete(stale)
+            setting = session.get(db.SettingRow, "analyst")
+            if original_analyst is None and setting is not None:
+                session.delete(setting)
+            elif original_analyst is not None:
+                setting.payload = original_analyst
+
+
+def run(stale_id):
     bootstrap()
     baseline = json.loads((ROOT / "examples/experiment_baseline.json").read_text())
     candidate = json.loads((ROOT / "examples/experiment_candidate.json").read_text())
@@ -88,8 +117,8 @@ def main():
         })
         report = saved["report"]
         assert report["status"] == "fail", report
-        assert report["economic"]["cost_per_request_usd"]["delta"] > 0
-        assert report["economic"]["quality_score"]["delta"] == 0
+        assert Decimal(report["economic"]["cost_per_request_usd"]["delta"]) > 0
+        assert Decimal(report["economic"]["quality_score"]["delta"]) == 0
         assert report["missing_usage_calls"] == 0
         assert request(client, "GET", f"/api/v1/comparisons/{saved['id']}")["report"]["status"] == "fail"
         # The investigation uses a separate analyst model, then proposes a measured experiment.
@@ -130,18 +159,17 @@ def main():
         outcome = request(client, "GET", f"/api/v1/comparisons/{outcome_id}")
         assert outcome["report"]["status"] == "pass", outcome
         assert outcome["request"]["baseline_id"] == baseline_id
-        assert outcome["report"]["economic"]["quality_score"]["delta"] == 0
-        # Simulate a lost worker during a model call. It must not be replayed or
-        # represented as fully accounted spend, even though earlier calls were known.
-        stale_id = str(uuid4())
+        assert Decimal(outcome["report"]["economic"]["quality_score"]["delta"]) == 0
+        # Simulate a lost worker during a model call. The runner must not replay it or
+        # represent it as fully accounted spend, even though earlier calls were known.
         with db.session_scope() as session:
             session.add(db.InvestigationRow(id=stale_id, report_id=saved["id"], state="running",
                 request=investigation["request"], result={"cost_known": False, "cost_usd": None,
                     "known_cost_usd": "0.001", "calls": [{"status": "in_flight"}]},
                 lease_until=datetime.now(timezone.utc) - timedelta(seconds=10)))
-        assert db.claim_investigation() != stale_id
-        stale = request(client, "GET", f"/api/v1/investigations/{stale_id}")
-        assert stale["state"] == "interrupted"
+        stale = wait_for(lambda: request(client, "GET", f"/api/v1/investigations/{stale_id}"),
+                         lambda item: item["state"] != "running", "stale investigation sweep", 30)
+        assert stale["state"] == "interrupted", stale
         assert stale["result"]["cost_known"] is False
         scenario_pricing = json.loads(json.dumps(baseline["pricing"]))
         scenario_pricing["version"] = "hypothetical"
@@ -151,9 +179,25 @@ def main():
             "monthly_requests": 100000,
         })
         assert scenario["status"] == "hypothetical"
-        assert scenario["cost_per_request_usd"]["candidate"] < scenario["cost_per_request_usd"]["baseline"]
-        for page in ("/", "/connections", "/experiments", "/reports",
-                     f"/reports/{saved['id']}", f"/artifacts/{baseline_id}", "/scenarios",
+        assert (Decimal(scenario["cost_per_request_usd"]["candidate"])
+                < Decimal(scenario["cost_per_request_usd"]["baseline"]))
+        # The real-model demo endpoint queues the support-triage suite on any gateway route.
+        triage = request(client, "POST", "/api/v1/demo/real", json={
+            "model": "costguard-mock/echo", "input_per_million_usd": "0.1",
+            "output_per_million_usd": "0.4", "configure_analyst": False})
+        triage_spec = request(client, "GET", "/api/v1/suites/support-triage")
+        triage_ids = [completed_job(client, triage_spec, triage[key])
+                      for key in ("baseline_job_id", "candidate_job_id")]
+        triage_report = request(client, "POST", "/api/v1/comparisons", json={
+            "baseline_id": triage_ids[0], "candidate_id": triage_ids[1],
+            "pricing": triage["pricing"], "policy": triage["policy"],
+            "monthly_requests": triage["monthly_requests"]})
+        assert Decimal(triage_report["report"]["economic"]["cost_per_request_usd"]["delta"]) > 0
+        assert request(client, "GET", f"/api/v1/artifacts/{triage_ids[1]}")["cases"][0]["output"]
+        assert client.post("/api/v1/jobs", json=baseline,
+                           headers={"Origin": "http://evil.example"}).status_code == 403
+        for page in ("/", "/connections", "/reports",
+                     f"/reports/{saved['id']}", f"/reports/{triage_report['id']}", f"/artifacts/{baseline_id}",
                      "/investigations", f"/investigations/{investigation_id}"):
             response = client.get(page)
             response.raise_for_status()
@@ -178,7 +222,7 @@ def main():
         ], check=False, capture_output=True, text=True)
         assert result.returncode == 1, result.stderr
         assert json.loads(output.read_text())["status"] == "fail"
-    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, proposed experiment, UI, CLI, MCP")
+    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, proposed experiment, real-demo endpoint, UI, CLI, MCP")
 
 
 if __name__ == "__main__":

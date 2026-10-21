@@ -1,6 +1,17 @@
 {% extends "base.html" %}{% block title %}Execution · CostGuard{% endblock %}
-{% block content %}<h1>{{artifact.name}}</h1><p class="muted">Suite {{artifact.suite_id}} · Run {{artifact.artifact_id}} · Pricing {{artifact.pricing.version}}</p>
-<div class="card"><button onclick="promote()">Set as baseline</button> <span id="message"></span></div>
-{% for case in artifact.cases %}<div class="card"><h2>{{case.case_id}} <span class="status {{case.status}}">{{case.status}}</span></h2><p>Latency {{case.latency_ms}} ms · Quality {{case.quality_score if case.quality_score is not none else 'Unknown'}} · {{case.evaluator or 'No evaluator'}}</p>
-<table><tr><th>Call</th><th>Model</th><th>Usage</th><th>Status</th></tr>{% for call in case.calls %}<tr><td>{{call.call_id[:8]}} · attempt {{call.attempt}}</td><td>{{call.provider}}/{{call.model}}</td><td>{{call.input_tokens if call.input_tokens is not none else '?'}} / {{call.output_tokens if call.output_tokens is not none else '?'}} · {{call.usage_source}}</td><td>{{call.status}}</td></tr>{% endfor %}</table><p>Steps: {% for step in case.steps %}{{step.kind}}/{{step.name}} {% endfor %}</p></div>{% endfor %}
-<script>async function promote(){const r=await fetch('/api/v1/baselines/{{artifact.suite_id}}',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({artifact_id:'{{artifact.artifact_id}}'})});document.getElementById('message').textContent=r.ok?'Baseline saved':'Unable to save baseline';}</script>{% endblock %}
+{% block content %}<h1>{{artifact.name}}</h1>
+<p class="muted">Suite {{artifact.suite_id}} · run <code>{{artifact.artifact_id}}</code> · pricing {{artifact.pricing.version}}{% if artifact.configuration.provider %} · model {{artifact.configuration.provider}}/{{artifact.configuration.model}}{% endif %}</p>
+{% if artifact.configuration.system_prompt %}<details class="card"><summary>System prompt</summary><pre>{{artifact.configuration.system_prompt}}</pre></details>{% endif %}
+<div class="card row"><button onclick="promote()">Set as suite baseline</button> <span id="message"></span></div>
+{% for case in artifact.cases %}<div class="card"><h2>{{case.case_id}} <span class="pill {{case.status}}">{{case.status}}</span>{% if case.quality_score is not none %} <span class="pill {{'pass' if case.quality_score|float >= 1 else 'fail'}}">quality {{case.quality_score}}</span>{% endif %}</h2>
+<p class="muted">Latency {{'%.0f'|format(case.latency_ms|float)}} ms · {{case.evaluator or 'no evaluator'}}{% if case.error %} · {{case.error}}{% endif %}</p>
+{% if case.output %}<div class="output">{{case.output}}</div>{% endif %}
+<div class="table-wrap"><table><tr><th>Call</th><th>Model</th><th>Input / output tokens</th><th>Status</th></tr>{% for call in case.calls %}<tr><td>{{call.call_id[:8]}} · attempt {{call.attempt}}</td><td>{{call.provider}}/{{call.model}}</td><td>{{call.input_tokens if call.input_tokens is not none else '?'}} / {{call.output_tokens if call.output_tokens is not none else '?'}} · {{call.usage_source}}</td><td>{{call.status}}</td></tr>{% endfor %}</table></div>
+<p class="steps">Steps: {% for step in case.steps %}{{step.kind}}/{{step.name}}{{' → ' if not loop.last}}{% endfor %}</p></div>{% endfor %}
+<script>
+async function promote(){
+  const suite={{artifact.suite_id|tojson}};
+  const response=await fetch('/api/v1/baselines/'+encodeURIComponent(suite),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({artifact_id:{{artifact.artifact_id|string|tojson}}})});
+  document.getElementById('message').textContent=response.ok?'Baseline saved':'Unable to save baseline';
+}
+</script>{% endblock %}

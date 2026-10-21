@@ -5,7 +5,7 @@ from math import ceil
 
 from pydantic import Field
 
-from .analysis import _call_cost, _compare, compare_workloads
+from .analysis import _call_cost, _compare, _mean, compare_workloads
 from .execution import CaseExecution, ExecutionArtifact
 from .models import (
     ComparisonPolicy,
@@ -234,3 +234,22 @@ def _to_workload_run(case: CaseExecution, evaluator: str | None, pricing: Pricin
         quality_score=quality,
         additional_charges_usd=sum((charge.amount_usd for charge in case.charges), Decimal("0")),
     )
+
+
+def reprice(artifact: ExecutionArtifact, pricing: PricingCatalog, monthly_requests: int) -> dict:
+    """Hypothetical price/traffic scenario that holds observed execution behavior fixed."""
+    if (any(case.status != "ok" for case in artifact.cases)
+            or any(call.usage_source in {"missing", "estimated"}
+                   for case in artifact.cases for call in case.calls)):
+        return {"status": "inconclusive", "reason": "failed cases or unobserved usage"}
+    original = [case_cost(case, artifact.pricing) for case in artifact.cases]
+    hypothetical = [case_cost(case, pricing) for case in artifact.cases]
+    if any(cost is None for cost in original + hypothetical):
+        return {"status": "inconclusive", "reason": "missing usage or pricing"}
+    precision = Decimal("0.00000001")
+    return {"status": "hypothetical",
+            "cost_per_request_usd": _compare(_mean(original), _mean(hypothetical), precision),
+            "monthly_cost_usd": _compare(_mean(original) * monthly_requests,
+                                         _mean(hypothetical) * monthly_requests, precision),
+            "pricing_versions": [artifact.pricing.version, pricing.version],
+            "assumption": "Observed usage and execution behavior remain unchanged; quality and latency are not predicted."}

@@ -62,6 +62,9 @@ class CaseExecution(Schema):
     quality_score: Decimal | None = Field(default=None, ge=0, le=1)
     evaluator: str | None = None
     error: str | None = None
+    output: str | None = Field(default=None, max_length=4000)
+    # Hidden reasoning a model returned separately from its answer; billed as output tokens.
+    reasoning: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
     def structure_is_valid(self) -> "CaseExecution":
@@ -120,6 +123,11 @@ class ExperimentSpec(Schema):
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     system_prompt: str = "Answer the user request accurately and briefly."
+    # exact: case-insensitive match; normalized: also ignores surrounding punctuation,
+    # quotes, markdown emphasis and repeated whitespace.
+    evaluator: Literal["exact", "normalized"] = "exact"
+    # None keeps the provider's default sampling; 0 makes repeated runs comparable.
+    temperature: float | None = Field(default=None, ge=0, le=2)
     cases: list[CaseInput] = Field(min_length=1)
     pricing: PricingCatalog
     limits: ExecutionLimits = Field(default_factory=ExecutionLimits)

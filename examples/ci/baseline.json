@@ -1,0 +1,331 @@
+{
+  "schema_version": 1,
+  "artifact_id": "130093d8-6525-4122-8004-ead5ee46388e",
+  "suite_id": "support-triage",
+  "name": "triage-baseline-strict-label",
+  "configuration": {
+    "kind": "prompt",
+    "model": "qwen/qwen3.8-27b",
+    "limits": "{\"timeout_seconds\":180,\"max_output_tokens\":400,\"max_attempts\":1,\"max_tool_calls\":0,\"max_steps\":4,\"stop_after_usd\":null}",
+    "provider": "groq",
+    "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation."
+  },
+  "pricing": {
+    "version": "reference-rates-2026-10",
+    "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+    "entries": [
+      {
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b",
+        "input_per_million_usd": "0.80",
+        "output_per_million_usd": "4.00"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "duplicate-charge",
+      "status": "ok",
+      "latency_ms": "132.3812",
+      "calls": [
+        {
+          "call_id": "0442b9a1-fb21-4182-aede-6a092e9a4fcb",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 74,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "130.261",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "130.261",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "billing",
+      "reasoning": null
+    },
+    {
+      "case_id": "upload-crash",
+      "status": "ok",
+      "latency_ms": "129.5702",
+      "calls": [
+        {
+          "call_id": "358ab7a9-4b7c-4e2f-aafa-13048c7aa4a0",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 74,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "128.0555",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "128.0555",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+    },
+    {
+      "case_id": "change-email",
+      "status": "ok",
+      "latency_ms": "94.4201",
+      "calls": [
+        {
+          "call_id": "2ba5ea56-2014-4aea-a740-7d312e7d5d5f",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 76,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "93.1021",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "93.1021",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+    },
+    {
+      "case_id": "missing-package",
+      "status": "ok",
+      "latency_ms": "98.3771",
+      "calls": [
+        {
+          "call_id": "049c1851-dd49-4b16-8a94-050e214cdfcb",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 72,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "96.4065",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "96.4065",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+    },
+    {
+      "case_id": "vat-invoice",
+      "status": "ok",
+      "latency_ms": "100.2078",
+      "calls": [
+        {
+          "call_id": "071a1f3e-d7b6-4955-9440-52064e90fd79",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 73,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "98.7583",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "98.7583",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "billing",
+      "reasoning": null
+    },
+    {
+      "case_id": "blank-dashboard",
+      "status": "ok",
+      "latency_ms": "105.4761",
+      "calls": [
+        {
+          "call_id": "c4c10bdd-00fa-4dd7-99cf-e6b69a337768",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 73,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "104.2414",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "104.2414",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+    },
+    {
+      "case_id": "delete-account",
+      "status": "ok",
+      "latency_ms": "102.6226",
+      "calls": [
+        {
+          "call_id": "3398d5fe-59e5-488a-a5d7-28405c21f42a",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 72,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "101.1815",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "101.1815",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+    },
+    {
+      "case_id": "express-upgrade",
+      "status": "ok",
+      "latency_ms": "99.7038",
+      "calls": [
+        {
+          "call_id": "c482fada-fb16-4279-af80-66f73124116c",
+          "step_id": "model-1",
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "input_tokens": 72,
+          "output_tokens": 2,
+          "usage_source": "gateway",
+          "status": "ok",
+          "latency_ms": "96.3794",
+          "attempt": 1,
+          "operation": "chat",
+          "tags": {}
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "model-1",
+          "parent_step_id": null,
+          "kind": "model",
+          "name": "qwen/qwen3.8-27b",
+          "status": "ok",
+          "latency_ms": "96.3794",
+          "tags": {}
+        }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+    }
+  ]
+}
