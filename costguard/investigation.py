@@ -193,6 +193,12 @@ def unsupported_numbers(text: str, numbers: list[Decimal]) -> list[str]:
     return list(dict.fromkeys(missing))
 
 
+def fix_name(source_name: str) -> str:
+    """analyst-fix-1 for a first proposal; a fix of analyst-fix-1 becomes analyst-fix-2."""
+    match = re.fullmatch(r"analyst-fix-(\d+)", source_name)
+    return f"analyst-fix-{int(match.group(1)) + 1 if match else 1}"
+
+
 class EvidenceTools:
     """Every investigation is restricted to its selected comparison and cases."""
 
@@ -271,7 +277,7 @@ class EvidenceTools:
         if self.proposal is not None:
             raise ToolError("One prompt experiment may be proposed per investigation")
         spec = self.source.model_dump(mode="json")
-        spec.update(name="Investigation candidate", system_prompt=proposal.system_prompt)
+        spec.update(name=fix_name(self.source.name), system_prompt=proposal.system_prompt)
         spec = ExperimentSpec.model_validate(spec)
         if spec.system_prompt == self.source.system_prompt:
             raise ToolError("Proposed prompt is unchanged")

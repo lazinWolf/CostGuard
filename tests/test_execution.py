@@ -69,6 +69,15 @@ class ExecutionTests(unittest.TestCase):
         self.assertIn("| Monthly cost at 1,000 requests (USD) | 10.00 | 20.00 | +100% |", text)
         self.assertIn("| Mean latency (ms) | 100 | 100 | 0% |", text)
 
+    def test_limits_are_described_in_plain_words(self):
+        from costguard.web import _limits
+        self.assertEqual(_limits({"max_cost_increase_percent": "20", "max_quality_drop": "0",
+                                  "min_candidate_quality_score": "0.85"}),
+                         ["cost per request may rise by at most 20%",
+                          "no fewer correct answers than the baseline", "at least 85% of answers correct"])
+        self.assertEqual(_limits({"max_quality_drop": "0.1"}),
+                         ["correct answers may fall at most 10 percentage points below the baseline"])
+
     def test_scenario_rejects_failed_evidence(self):
         run = artifact("failed")
         run.cases[0].status = "error"

@@ -64,6 +64,7 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual([event["tool"] for event in result["events"]],
                          ["inspect_comparison", "inspect_case", "propose_experiment", "finish_investigation"])
         self.assertEqual(result["proposal"]["spec"]["system_prompt"], "Answer briefly.")
+        self.assertEqual(result["proposal"]["spec"]["name"], "analyst-fix-1")
         # A usage receipt is saved before any tool result from that response.
         self.assertEqual(receipts[0]["events"], [])
         self.assertEqual(len(receipts[0]["calls"]), 1)
@@ -114,6 +115,11 @@ class InvestigationTests(unittest.TestCase):
         other = Conclusion(summary="x", findings=[{"text": "y", "evidence": ["case:onex"]}])
         with self.assertRaisesRegex(ValueError, "not inspected"):
             tools.finish(other)
+
+    def test_fixes_of_fixes_are_numbered(self):
+        from costguard.investigation import fix_name
+        self.assertEqual([fix_name("helpful-prompt"), fix_name("analyst-fix-1"), fix_name("analyst-fix-9")],
+                         ["analyst-fix-1", "analyst-fix-2", "analyst-fix-10"])
 
     def test_tools_cannot_access_unrelated_cases(self):
         with self.assertRaisesRegex(ValueError, "not present"):

@@ -26,6 +26,7 @@ templates.env.filters["usd"] = lambda value: "Unknown" if value is None else (
 def dashboard(request: Request):
     return templates.TemplateResponse(request, "dashboard.html", {
         "reports": db.list_comparisons(6), "investigations": db.list_investigations(6),
+        "analyst": db.get_analyst_settings(),
         "demo_enabled": os.environ.get("COSTGUARD_DEMO") == "1",
         "suite": real_demo.suite(),
     })
@@ -278,6 +279,9 @@ def _limits(policy: dict | None) -> list[str]:
         if value is None or key not in LIMITS:
             continue
         number = Decimal(str(value)).normalize()
+        if key == "max_quality_drop" and number == 0:
+            result.append("no fewer correct answers than the baseline")
+            continue
         result.append(LIMITS[key].format(format(number, "f"), pct=format((number * 100).normalize(), "f")))
     return result
 

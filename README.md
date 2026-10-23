@@ -27,7 +27,7 @@ Policy: cost per request may rise at most 20 %, and quality may not fall below t
 | Investigating that result | Identifies the restatement and proposes the strict baseline wording |
 | Second fix vs original baseline | Same cost, 6/8 correct like the baseline; **pass** |
 
-The two workload runs take about a minute on the GPU, and each investigation about 3–4 minutes (10–15 minutes on CPU). The 3B model misroutes two messages even with the baseline prompt, which is why the policy compares against the baseline rather than an absolute score. `make restore` loads this recorded session ([demo/snapshot.sql](demo/snapshot.sql)) as a fallback when a live model is unavailable.
+The two workload runs take about a minute on the GPU, and each investigation about 3–4 minutes (10–15 minutes on CPU). The 3B model misroutes two messages even with the baseline prompt, which is why the policy compares against the baseline rather than an absolute score. `make restore` loads this recorded session ([demo/snapshot.sql](demo/snapshot.sql)) as a fallback when a live model is unavailable. The presenter script with timings and fallbacks is [docs/DEMO.md](docs/DEMO.md).
 
 ### Local models with Ollama (free)
 
@@ -59,7 +59,7 @@ Small models are weak analysts: `llama3.2:3b` often answers in prose instead of 
 docker compose --profile gateway up -d --build --wait
 ```
 
-Open Bifrost at <http://localhost:8080> (setup token in `.env`), finish its admin setup, and add a provider with its API key. Provider keys stay in Bifrost; CostGuard never stores them. Back on the CostGuard overview, choose the provider's `provider/model` ID and **enter the provider's real per-token prices**, then run the demo. The demo makes 16 workload calls; each investigation call is recorded and priced separately. If inference requires a Bifrost virtual key, set `BIFROST_VIRTUAL_KEY` in `.env` and recreate the app and runner.
+Open Bifrost at <http://localhost:8080> (`BIFROST_PORT` in `.env` changes the port if 8080 is taken; setup token in `.env`), finish its admin setup, and add a provider with its API key. Provider keys stay in Bifrost; CostGuard never stores them. Back on the CostGuard overview, choose the provider's `provider/model` ID and **enter the provider's real per-token prices**, then run the demo. The demo makes 16 workload calls; each investigation call is recorded and priced separately. If inference requires a Bifrost virtual key, set `BIFROST_VIRTUAL_KEY` in `.env` and recreate the app and runner.
 
 Measured on Groq with `groq/qwen/qwen3.8-27b` as both workload and analyst, at the prices Bifrost's model catalog lists ($0.80 / $4.00 per million input/output tokens):
 

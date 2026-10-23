@@ -40,6 +40,7 @@
   {% if before != after %}<p class="muted small">System prompt, word by word: <del>removed</del> · <ins>added</ins>. Same cases, same model, same prices.</p>
   <div class="prompts"><div><h3>Baseline · {{before.split()|length}} words</h3><div class="prompt" id="prompt-before" data-diff-left="prompt-after">{{before}}</div></div>
   <div><h3>{{'Proposal' if related.source else 'Candidate'}} · {{after.split()|length}} words</h3><div class="prompt" id="prompt-after">{{after}}</div></div></div>
+  {% elif related.source and baseline.configuration.get('model') == candidate.configuration.get('model') %}<p>The proposed prompt is identical to the baseline prompt: this fix reverts the change. Same cases, same model, same prices.</p>
   {% else %}<p>Both runs use the same system prompt{% if baseline.configuration.get('model') != candidate.configuration.get('model') %}, but different models: {{baseline.configuration.get('model')}} → {{candidate.configuration.get('model')}}{% endif %}. Differences below come from run-to-run model behavior.</p>{% endif %}
 </section>
 

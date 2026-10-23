@@ -24,7 +24,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://costguard:${POSTGRES_PASSWORD:-costguard-local}@postgres:5432/costguard
       GATEWAY_URL: http://bifrost:8080
-      BIFROST_PUBLIC_URL: http://localhost:8080
+      BIFROST_PUBLIC_URL: http://localhost:${BIFROST_PORT:-8080}
       BIFROST_VIRTUAL_KEY: ${BIFROST_VIRTUAL_KEY:-}
       COSTGUARD_DEMO: ${COSTGUARD_DEMO:-0}
     ports:
@@ -59,7 +59,7 @@ services:
     volumes:
       - bifrost_data:/app/data
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${BIFROST_PORT:-8080}:8080"
 
   ollama:
     image: ollama/ollama:0.34.1

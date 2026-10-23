@@ -14,7 +14,7 @@
     <div><label for="demo-output">Output USD / million tokens</label><input id="demo-output" type="number" min="0" step="any" required value="{{suite.reference_pricing.output_per_million_usd}}"></div>
   </div>
   <p class="muted">Default prices are notional reference rates so a free local model still shows a cost difference. Enter your provider's real prices for a cloud model.</p>
-  <label class="row"><input id="demo-analyst" type="checkbox" checked style="width:auto"> Also use this model as the investigation analyst (it needs tool-calling support)</label>
+  <label class="row"><input id="demo-analyst" type="checkbox" {{'' if analyst else 'checked'}} style="width:auto"> Also use this model as the investigation analyst (it needs tool-calling support){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% endif %}</label>
   <p><button id="demo-start" type="submit">Run baseline and candidate</button></p>
   <p class="muted">This calls the selected model {{suite.cases|length * 2}} times and may incur provider charges. A local model on CPU can take several minutes.</p>
   <p id="demo-status" class="notice" hidden></p>
