@@ -67,8 +67,11 @@ services:
     environment:
       OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      # Investigation prompts include tool schemas and evidence; Ollama's small default context truncates them.
-      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
+      # Investigation prompts include tool schemas and evidence, and reasoning analysts think at length:
+      # 16K tokens of context. An 8-bit context cache (needs flash attention) keeps that within 8 GB GPUs.
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-16384}
+      OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
+      OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-q8_0}
     volumes:
       - ollama_data:/root/.ollama
     ports:

@@ -96,7 +96,8 @@ def run_case(spec: ExperimentSpec, case, client: httpx.Client,
                     error = None
                 except httpx.HTTPStatusError as exc:
                     code = exc.response.status_code
-                    error = f"model request failed: HTTP {code}"
+                    reason = ratelimit.error_reason(exc.response)
+                    error = f"model request failed: HTTP {code}" + (f" ({reason})" if reason else "")
                     retryable = code >= 500 or code in RETRYABLE_STATUS
                 except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
                     error = f"model request failed: {type(exc).__name__}"

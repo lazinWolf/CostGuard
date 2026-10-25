@@ -125,6 +125,22 @@ class InvestigationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not present"):
             evidence().inspect_case("another-suite-case")
 
+    def test_runnable_comparison_is_reminded_once_to_propose(self):
+        finish = {"summary": "Cost rose", "findings": [{"text": "Input grew", "evidence": ["comparison"]}]}
+        for replies, proposed in (
+                ([("inspect_comparison", {}), ("finish_investigation", finish),
+                  ("propose_experiment", {"system_prompt": "Answer briefly.", "rationale": "Shorter"}),
+                  ("finish_investigation", finish)], True),
+                ([("inspect_comparison", {}), ("finish_investigation", finish),
+                  ("finish_investigation", finish)], False)):
+            replies = iter(replies)
+            with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
+                    lambda request: response(tool_message(*next(replies))))) as client:
+                result = investigate("Find costs", settings(), evidence(), client)
+            self.assertEqual(result["state"], "completed", result["error"])
+            self.assertIn("propose_experiment", result["events"][1]["result"]["error"])
+            self.assertEqual(result["proposal"] is not None, proposed)
+
     def test_same_turn_read_and_finish_cannot_claim_unseen_results(self):
         read = tool_message("inspect_comparison", {})["tool_calls"][0]
         finish = tool_message("finish_investigation", {"summary": "Claim",
@@ -145,6 +161,13 @@ class InvestigationTests(unittest.TestCase):
             self.assertEqual(proposed[field], original[field])
         with self.assertRaisesRegex(ValueError, "One prompt"):
             tools.propose(PromptProposal(system_prompt="Another prompt", rationale="Another test"))
+
+    def test_overview_states_the_limits_a_proposal_is_judged_by(self):
+        tools = evidence()
+        tools.saved["request"]["policy"] = {"max_cost_increase_percent": "20", "max_quality_drop": "0",
+                                            "min_candidate_quality_score": None}
+        self.assertEqual(tools.overview()["policy_limits"],
+                         {"max_cost_increase_percent": "20", "max_quality_drop": "0"})
 
     def test_imported_evidence_can_be_inspected_but_not_executed(self):
         tools = evidence(with_source=False)
@@ -206,7 +229,7 @@ class InvestigationTests(unittest.TestCase):
                             "next_steps": "[\"Run the proposal\"]"})])
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
                 lambda request: response(next(replies)))) as client:
-            result = investigate("Find costs", settings(), evidence(), client)
+            result = investigate("Find costs", settings(), evidence(with_source=False), client)
         self.assertEqual(result["state"], "completed", result["error"])
         self.assertEqual(result["conclusion"]["next_steps"], ["Run the proposal"])
 

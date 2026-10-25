@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from . import db, real_demo
-from .investigation import NUMBER, evidence_numbers, unsupported_numbers
+from .investigation import NUMBER, PROPOSAL_REMINDER, evidence_numbers, unsupported_numbers
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -129,6 +129,10 @@ def _timeline(result: dict) -> list[dict]:
     for event in result.get("events", []):
         output = event.get("result") or {}
         error = output.get("error") if isinstance(output, dict) else None
+        if event["tool"] == "finish_investigation" and error == PROPOSAL_REMINDER:
+            steps.append({"tool": event["tool"], "error": None, "detail": output, "saw": None,
+                          "text": "Tried to finish without a proposal; CostGuard asked it to propose one first"})
+            continue
         if event["tool"] == "inspect_case":
             text = f"Inspected case {output.get('evidence_ref', '').removeprefix('case:')}" if not error else "Tried to inspect a case"
         else:

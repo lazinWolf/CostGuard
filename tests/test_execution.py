@@ -184,7 +184,19 @@ class ExecutionTests(unittest.TestCase):
         with httpx.Client(base_url="http://test", transport=httpx.MockTransport(response)) as client:
             case = run_case(spec, spec.cases[0], client)
         self.assertEqual(len(requests), 1)
-        self.assertEqual(case.error, "model request failed: HTTP 401")
+        self.assertEqual(case.error, "model request failed: HTTP 401 (the gateway or provider rejected the credentials)")
+        self.assertNotIn("bad key", case.error)
+
+    def test_gateway_failures_are_explained_without_provider_text(self):
+        from costguard.ratelimit import error_reason
+        reason = lambda status, body=None: error_reason(httpx.Response(status, json=body) if body else httpx.Response(status))
+        self.assertEqual(reason(400, {"error": {"message": "This model's maximum context length is 8192 tokens"}}),
+                         "the request exceeded the model's context window")
+        self.assertEqual(reason(400, {"error": {"message": "no keys found that support model: x"}}),
+                         "the gateway has no route for this model")
+        self.assertEqual(reason(504), "the model did not answer within the gateway's request timeout")
+        self.assertIn("context window filling up", reason(500, {"error": {"message": "secret-ish detail"}}))
+        self.assertEqual(reason(422, {"error": "secret-ish detail"}), "")
 
     def test_server_errors_are_retried_and_output_recorded(self):
         spec, requests = self._spec(evaluator="normalized"), []

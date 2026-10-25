@@ -27,7 +27,7 @@ Policy: cost per request may rise at most 20 %, and quality may not fall below t
 | Investigating that result | Identifies the restatement and proposes the strict baseline wording |
 | Second fix vs original baseline | Same cost, 6/8 correct like the baseline; **pass** |
 
-The two workload runs take about a minute on the GPU, and each investigation about 3–4 minutes (10–15 minutes on CPU). The 3B model misroutes two messages even with the baseline prompt, which is why the policy compares against the baseline rather than an absolute score. `make restore` loads this recorded session ([demo/snapshot.sql](demo/snapshot.sql)) as a fallback when a live model is unavailable. The presenter script with timings and fallbacks is [docs/DEMO.md](docs/DEMO.md).
+Those runs were recorded with an 8K-token context. With the current 16K context and 8-bit context cache the same change measures +1,100 %. The two workload runs take about 20 seconds on the GPU, and an investigation 2–3 minutes (10–15 minutes on CPU). The 3B model misroutes two messages even with the baseline prompt, which is why the policy compares against the baseline rather than an absolute score. `make restore` loads this recorded session ([demo/snapshot.sql](demo/snapshot.sql)) as a fallback when a live model is unavailable. The presenter script with timings and fallbacks is [docs/DEMO.md](docs/DEMO.md).
 
 ### Local models with Ollama (free)
 
@@ -51,7 +51,7 @@ The last command registers Ollama and its pulled models in the Bifrost gateway w
 
 Qwen and Granite are reasoning models: they think before answering, and the hidden reasoning tokens are billed as output. As the *workload* they are a poor fit for this suite. Granite used 125 output tokens to answer `billing`, and under the candidate prompt both spent the whole 400-token limit thinking and returned an empty answer; CostGuard records that as real cost and a quality miss. As the *analyst* they need room to think: the demo sets the analyst's output limit to 4,096 tokens, and a lower limit fails with a message naming it.
 
-Small models are weak analysts: `llama3.2:3b` often answers in prose instead of calling tools, and CostGuard deliberately does not accept prose as a conclusion. Use Granite, Qwen or a cloud model for investigations, and choose the analyst on **Connections** (or pass `--keep-analyst` to the terminal demo). Ollama loads one model and serves one request at a time, with an 8K context; adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL` and `OLLAMA_CONTEXT_LENGTH` in `.env` if the host has the memory.
+Small models are weak analysts: `llama3.2:3b` often answers in prose instead of calling tools, and CostGuard deliberately does not accept prose as a conclusion. Use Granite, Qwen or a cloud model for investigations, and choose the analyst on **Connections** (or pass `--keep-analyst` to the terminal demo). Ollama loads one model and serves one request at a time. It uses a 16K-token context with an 8-bit context cache (`OLLAMA_KV_CACHE_TYPE=q8_0`, which needs `OLLAMA_FLASH_ATTENTION=1`), so Granite fits entirely on an 8 GB GPU while it reasons. With 8K, a long analyst answer filled the context and failed. Adjust these and `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL` in `.env` for other hosts.
 
 ### Cloud models
 
@@ -109,7 +109,7 @@ A local model has no per-token bill, so the demo prefills **notional reference r
 
 ## Investigations
 
-The analyst model is configured on **Connections** (`provider/model`, explicit prices, pricing version, call/token/time/spend limits) separately from the workload model, and is snapshotted per investigation. The runner executes a bounded tool loop: inspect the comparison, inspect cases (calls, usage, quality and recorded output), optionally propose one system-prompt experiment, and finish with findings that may cite only evidence returned on earlier turns. Correctable tool mistakes are explained back to the analyst; prose is never accepted as a conclusion.
+The analyst model is configured on **Connections** (`provider/model`, explicit prices, pricing version, call/token/time/spend limits) separately from the workload model, and is snapshotted per investigation. The runner executes a bounded tool loop: inspect the comparison (including the policy limits a fix is judged by), inspect cases (calls, usage, quality and recorded output), optionally propose one system-prompt experiment, and finish with findings that may cite only evidence returned on earlier turns. When a comparison can be re-run and the analyst tries to finish without a proposal, it is reminded once; a second finish is accepted. Correctable tool mistakes are explained back to the analyst; prose is never accepted as a conclusion. A failed gateway request is reported by type (timeout, full context window, rejected credentials, no route for the model, server error) without storing the provider's own error text.
 
 The investigation page leads with the findings, links each cited case to its row in the report, and marks every number in a finding that does not appear (at the precision written) in the evidence the analyst inspected. That is a presence check: it catches invented figures, not wrong reasoning, and it also flags numbers the analyst derived correctly. Findings are model interpretations; validated references do not prove every claim, and numerical policy results always come from the deterministic engine. Analyst calls and spend are recorded before each call, with no automatic retry or replay after a lost lease. Spend thresholds are checked between calls and are not hard caps on in-flight charges; missing analyst usage stops the loop with unknown cost. Running a proposal preserves the source cases, model, pricing and limits, is queued once, and is compared against the original baseline and policy. Imported artifacts can be investigated, but a proposal requires the candidate's original CostGuard job specification.
 
@@ -117,7 +117,7 @@ The analyst receives the selected report and configuration and any case inputs a
 
 ## Make targets
 
-`make up` (build and start the local stack), `make models` (pull the demo models and register them in Bifrost), `make demo` (workload runs plus an investigation from the terminal), `make test`, `make e2e`, `make gate` (CI cost gate), `make snapshot` / `make restore` (save or load the database, e.g. the recorded demo), `make down`. They use `--profile local`; add `compose.gpu.yaml` through `COMPOSE_FILE` in `.env` for the GPU.
+`make up` (build and start the local stack), `make models` (pull the demo models and register them in Bifrost), `make warm` (load the workload model before a live demo), `make demo` (workload runs plus an investigation from the terminal), `make test`, `make e2e`, `make gate` (CI cost gate), `make snapshot` / `make restore` (save or load the database, e.g. the recorded demo), `make down`. They use `--profile local`; add `compose.gpu.yaml` through `COMPOSE_FILE` in `.env` for the GPU.
 
 ## Verify
 

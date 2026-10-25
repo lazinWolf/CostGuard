@@ -44,3 +44,27 @@ def post(client: httpx.Client, url: str, *, json: dict, timeout: float,
         if waits is not None:
             waits.append(delay)
         fallback = min(fallback * 2, 60)
+
+
+
+def error_reason(response: httpx.Response) -> str:
+    """A CostGuard-worded reason for a failed gateway request. Provider text can contain
+    private details, so it is only inspected for known failure types, never stored."""
+    try:
+        error = response.json().get("error")
+        text = str(error.get("message") if isinstance(error, dict) else error or "").lower()
+    except (ValueError, AttributeError):
+        text = ""
+    status = response.status_code
+    if "context" in text or "too long" in text or ("maximum" in text and "token" in text):
+        return "the request exceeded the model's context window"
+    if status in {401, 403}:
+        return "the gateway or provider rejected the credentials"
+    if status == 404 or "no keys found" in text or ("model" in text and "not found" in text):
+        return "the gateway has no route for this model"
+    if status in {408, 504} or "timeout" in text or "timed out" in text:
+        return "the model did not answer within the gateway's request timeout"
+    if status >= 500:
+        return ("the model server failed while answering; with a local model this is often "
+                "the context window filling up during long reasoning")
+    return ""
