@@ -1,14 +1,46 @@
-"""Read-only MCP access to CostGuard's saved economic evidence."""
+"""MCP access to CostGuard. Reading is always possible; starting paid runs must be switched on."""
 
 import json
+import os
 
 from mcp.server import MCPServer
 
-from . import db
+from . import db, service
+from .checks import CheckInput
 from .economics import compare_artifacts, reprice
 from .models import ComparisonPolicy, PricingCatalog
 
 mcp = MCPServer("CostGuard")
+
+
+@mcp.tool()
+def list_checks() -> list[dict]:
+    """List checks, newest first, with their verdict, cost change and correct answers. Fixes are nested under the check they fix."""
+    return service.list_checks()
+
+
+@mcp.tool()
+def get_check(report_id: str) -> dict:
+    """A check's verdict and each limit beside what was measured. Use explain_check to learn why."""
+    check = service.get_check(report_id)
+    return {"id": check.id, "verdict": check.report["status"], "limits": check.limits,
+            "reasons": check.report.get("reasons", []), "policy": check.report["policy"]}
+
+
+@mcp.tool()
+def explain_check(report_id: str) -> dict:
+    """Why a check came out as it did: cost drivers, the prompt change and the cases that changed. No model is called."""
+    return service.explain_check(report_id)
+
+
+@mcp.tool()
+def start_check(check: dict) -> dict:
+    """Run a baseline and a candidate on a gateway model and compare them. Makes paid model calls, so it only
+    works when COSTGUARD_MCP_ALLOW_RUNS=1 is set for this server."""
+    if os.environ.get("COSTGUARD_MCP_ALLOW_RUNS") != "1":
+        raise ValueError("Starting a check makes model calls that may incur charges. "
+                         "Set COSTGUARD_MCP_ALLOW_RUNS=1 for this MCP server to allow it.")
+    return service.create_check(CheckInput.model_validate(check))
 
 
 @mcp.tool()

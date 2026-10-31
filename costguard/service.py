@@ -225,6 +225,20 @@ def check_progress(candidate_job_id: str) -> dict:
             "baseline": baseline, "candidate": candidate}
 
 
+def explain_check(report_id: str) -> dict:
+    """Why a check came out as it did, from the saved evidence alone: no model is asked.
+
+    The same facts the analyst starts from, so a coding assistant over MCP can answer "why did this
+    fail?" directly."""
+    check = get_check(report_id)
+    prompts = [side.configuration.get("system_prompt", "") for side in (check.baseline, check.candidate)]
+    return {"id": check.id, "verdict": check.report["status"], "limits": check.limits,
+            "headline": diagnosis.headline(check.report, check.breakdown),
+            "why": check.breakdown["explanation"] if check.breakdown else [],
+            "prompt_change": diagnosis.prompt_change(*prompts),
+            "changed_cases": diagnosis.changed_cases(check.cases)}
+
+
 def list_checks(limit: int | None = None) -> list[dict]:
     """Checks, newest first. Every fix measured for a check is nested under the original check."""
     rows = {row["id"]: row for row in db.list_comparisons(limit)}

@@ -36,32 +36,37 @@ digraph CostGuardArchitecture {
     label="Who asks";
     style="rounded,dashed";
     color="#335B7A";
-    browser [label="Browser UI\nrun demo · reports · investigations"];
+    browser [label="Browser UI\nnew check · check page\nexplain and fix"];
     ci [label="CI pipeline / CLI\ncostguard gate → exit 0 · 1 · 2"];
-    agent [label="Coding agent\nread-only MCP queries"];
+    agent [label="Coding agent\nMCP: list · get · explain check"];
   }
 
   subgraph cluster_stack {
     label="Docker Compose stack (localhost only)";
     style="rounded";
     color="#43886B";
-    app [label="CostGuard app · FastAPI\nUI · API · economic engine\nprices · policy · what-if repricing", fillcolor="#10527B"];
-    runner [label="Runner\n① runs baseline & candidate cases\n③ bounded analyst tool loop", fillcolor="#10527B"];
-    db [label="PostgreSQL · Alembic\nruns · outputs · reports\njobs · investigations"];
+    app [label="CostGuard app · FastAPI\nUI · API · service layer\neconomic engine · prices · policy", fillcolor="#10527B"];
+    runner [label="Runner\n① runs baseline & candidate cases\n② compares each finished check\n③ analyst, digest-first tool loop\n④ measures each proposed fix\njudge model scores answers", fillcolor="#10527B"];
+    db [label="PostgreSQL · Alembic\nruns · outputs · judgements\nchecks · investigations · fixes"];
+    events [label="Event log\nJSON lines · pluggable sinks", fillcolor="#1B3A55"];
     bifrost [label="Bifrost gateway\nproviders · keys · routes"];
     ollama [label="Ollama (local GPU)\nLlama 3.2 · Granite · Qwen"];
   }
 
+  recorded [label="Recorded example\nreal session replayed\nwithout a model", fillcolor="#3A315D", color="#6C6291"];
   cloud [label="Cloud providers\nGroq · any OpenAI-compatible", fillcolor="#3A315D", color="#6C6291"];
   decision [label="Ship · revise · investigate\npass / fail / inconclusive", fillcolor="#146144", color="#43886B"];
 
   browser -> app [label="start runs, read reports"];
   ci -> app [label="same engine on\nrecorded evidence", style=dashed];
-  agent -> db [label="MCP server", style=dashed];
-  app -> db [label="queue jobs\n② compare & gate"];
+  agent -> app [label="MCP server", style=dashed];
+  recorded -> app [label="load instantly", style=dashed];
+  runner -> events [style=dashed];
+  app -> events [style=dashed];
+  app -> db [label="queue jobs\nsave comparisons"];
   runner -> db [label="claim jobs\nsave evidence"];
-  runner -> bifrost [label="workload and\nanalyst calls"];
+  runner -> bifrost [label="workload, analyst\nand judge calls"];
   bifrost -> ollama;
   bifrost -> cloud;
-  app -> decision [label="④ fix measured\nvs original baseline"];
+  app -> decision [label="best passing fix,\nmeasured vs original baseline"];
 }

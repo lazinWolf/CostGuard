@@ -5,7 +5,7 @@ SNAPSHOT ?= demo/snapshot.sql
 COMPOSE = docker compose --profile local
 PSQL = $(COMPOSE) exec -T postgres psql -q -U costguard -d costguard
 
-.PHONY: up down models warm demo test e2e gate snapshot restore logs
+.PHONY: up down models warm recorded demo test e2e gate snapshot restore logs
 
 up:        ## Build and start app, runner, PostgreSQL, Bifrost and Ollama
 	$(COMPOSE) up -d --build --wait
@@ -20,6 +20,9 @@ models:    ## Pull the workload and analyst models and register them in Bifrost
 
 warm:      ## Load the workload model into memory so the first live run starts fast
 	curl -sf -m 300 localhost:11435/api/generate -d '{"model": "$(MODEL:ollama/%=%)", "prompt": "ok", "stream": false}' > /dev/null && echo "$(MODEL) loaded"
+
+recorded:  ## Replay the recorded example (a real check, analyst run and measured fixes); no model needed
+	$(COMPOSE) exec app python -m costguard load-recorded
 
 demo:      ## Run baseline and candidate on MODEL, then investigate with the analyst set on Connections
 	$(COMPOSE) exec app python -m costguard demo --model $(MODEL) --keep-analyst --investigate
@@ -37,7 +40,7 @@ gate:      ## CI cost gate on the recorded runs in examples/ci
 snapshot:  ## Save the database as the demo fallback
 	$(COMPOSE) exec -T postgres pg_dump -U costguard -d costguard --clean --if-exists --no-owner > $(SNAPSHOT)
 
-restore:   ## Replace the database with the saved demo fallback
+restore:   ## Replace the whole database with the saved dump (an older recorded session; `make recorded` is the usual fallback)
 	$(PSQL) -v ON_ERROR_STOP=1 < $(SNAPSHOT)
 
 logs:

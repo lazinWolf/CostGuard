@@ -52,10 +52,15 @@ async def check_mcp(report_id):
         async with ClientSession(read, write) as session:
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
-            assert {"list_runs", "get_report", "inspect_hotspots", "list_investigations", "get_investigation"} <= names
+            assert {"list_runs", "get_report", "inspect_hotspots", "list_investigations", "get_investigation",
+                    "list_checks", "get_check", "explain_check", "start_check"} <= names
             result = await session.call_tool("inspect_hotspots", {"report_id": report_id})
             assert not result.is_error, result
             assert result.content
+            explained = await session.call_tool("explain_check", {"report_id": report_id})
+            assert not explained.is_error and "changed_cases" in explained.content[0].text, explained
+            refused = await session.call_tool("start_check", {"check": {}})
+            assert refused.is_error, "start_check must be refused unless runs are allowed"
 
 
 def wait_for(read, done, label, seconds=90):
