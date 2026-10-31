@@ -4,11 +4,12 @@
 <div class="page-head"><div>
   <h1>Checks</h1>
   <p class="muted">Does a change to a prompt, model or tool path stay within your cost and quality limits? Each check runs both versions on the same cases and applies your limits.</p>
-</div><a class="button" href="/checks/new">New check</a></div>
+</div><p class="row"><button class="secondary" onclick="loadRecorded()">Load the recorded example</button> <a class="button" href="/checks/new">New check</a></p></div>
+<p id="message" class="notice warn" hidden></p>
 
 {% macro row(check, nested=false) %}
   <tr {% if nested %}class="nested"{% endif %}>
-    <td><a href="/checks/{{check.id}}"><strong>{{check.candidate_name}}</strong></a><br><small class="muted">vs {{check.baseline_name}} · {{check.model or ''}}</small></td>
+    <td><a href="/checks/{{check.id}}"><strong>{{check.candidate_name}}</strong></a>{% if check.recorded and not nested %} <span class="chip">recorded example</span>{% endif %}<br><small class="muted">vs {{check.baseline_name}} · {{check.model or ''}}</small></td>
     <td>{{pill(check.status)}}</td>
     <td>{% if check.cost_change is not none %}<span class="change {{'bad' if check.cost_change|float > 0 else 'good' if check.cost_change|float < 0}}">{{check.cost_change|percent}}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
     <td>{{check.correct or '–'}}</td>
@@ -24,7 +25,8 @@
 {% else %}
 <section class="card empty"><h2>No checks yet</h2>
   <p>Start one to see a verdict, the cost drivers and what an analyst would change.</p>
-  <p><a class="button" href="/checks/new">Run the demo check</a></p></section>
+  <p class="row"><button onclick="loadRecorded()">Load the recorded example</button> <a class="button secondary" href="/checks/new">Run a check on a model</a></p>
+  <p class="muted small">The recorded example is a real session replayed instantly: no model, gateway or GPU needed.</p></section>
 {% endif %}
 
 <section class="card"><h2>The same gate in CI</h2>
@@ -32,4 +34,10 @@
   <pre>python -m costguard gate --baseline baseline.json --candidate candidate.json \
   --pricing pricing.json --policy policy.json</pre>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const loadRecorded=()=>busy(async()=>{const loaded=await api('examples/recorded',{});location.href='/checks/'+loaded.report_id;});
+</script>
 {% endblock %}

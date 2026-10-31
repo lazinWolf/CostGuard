@@ -7,7 +7,7 @@ import time
 from decimal import Decimal
 from pathlib import Path
 
-from . import checks, db, service
+from . import checks, db, recorded, service
 from .economics import ComparisonDetails, compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .models import ComparisonPolicy, PricingCatalog
@@ -139,6 +139,12 @@ def parser() -> argparse.ArgumentParser:
                       help="also ask the analyst to investigate the comparison")
     demo.add_argument("--question", default="Explain the cost and quality change, inspect the cases "
                       "that changed most, and propose a prompt experiment that restores quality at lower cost.")
+    record = sub.add_parser("record", help="Export a check and its analyst session as a recorded example")
+    record.add_argument("report_id")
+    record.add_argument("investigation_id")
+    record.add_argument("--name", default="support-triage")
+    record.add_argument("--output", help="file to write ('-' for stdout); default examples/recorded/NAME.json")
+    sub.add_parser("load-recorded", help="Replay the recorded example into the database, without any model")
     scenario = sub.add_parser("scenario", help="Reprice a saved artifact")
     scenario.add_argument("artifact_id")
     scenario.add_argument("--pricing", required=True)
@@ -187,6 +193,17 @@ def main(argv=None) -> int:
             _write(args.json_output, json.dumps(result, indent=2))
         elif args.command == "demo":
             return _demo(args)
+        elif args.command == "record":
+            content = json.dumps(recorded.export(args.name, args.report_id, args.investigation_id), indent=1) + "\n"
+            if args.output == "-":
+                sys.stdout.write(content)
+            else:
+                path = Path(args.output) if args.output else recorded.DIRECTORY / f"{args.name}.json"
+                path.parent.mkdir(exist_ok=True)
+                path.write_text(content)
+                print(f"Recorded {path}")
+        elif args.command == "load-recorded":
+            print(f"Check: http://localhost:8000/checks/{service.load_recorded()}")
         elif args.command == "scenario":
             artifact = db.get_artifact(args.artifact_id)
             if artifact is None:

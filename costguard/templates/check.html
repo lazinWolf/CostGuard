@@ -10,6 +10,7 @@
   <p class="muted small">{{check.baseline.cases|length}} cases · {{check.candidate.configuration.get('provider', '?')}}/{{check.candidate.configuration.get('model', '?')}} · prices <code>{{req.pricing.version}}</code> · check <code>{{check.id[:8]}}</code></p>
 </div></div>
 
+{% if check.recorded %}<div class="notice"><strong>Recorded example.</strong> Replayed from a real session on <code>{{check.recorded.model}}</code> with <code>{{check.recorded.analyst}}</code> as the analyst, recorded {{check.recorded.at[:10]}}. No model is called to show it; verdicts are recomputed from the recorded runs.</div>{% endif %}
 {% if source %}<div class="notice">This check measures a <strong>fix proposed by the analyst</strong> for <a href="/checks/{{source.report_id}}#explain">an earlier check</a>, against the original baseline.</div>{% endif %}
 
 <ol class="stepper">

@@ -218,6 +218,14 @@ def run(stale_id):
         assert all(case["evaluator"] == "llm_judge:v1:costguard-mock/judge" for case in scored)
         assert all(case["judgement"]["passed"] is True and case["judgement"]["cost_usd"] for case in scored), scored
         assert "Judge:" in client.get(f"/checks/{judged_done['report_id']}").text
+        # The recorded example replays without any model, and loading it twice changes nothing.
+        replayed = request(client, "POST", "/api/v1/examples/recorded")["report_id"]
+        assert request(client, "POST", "/api/v1/examples/recorded")["report_id"] == replayed
+        example = request(client, "GET", f"/api/v1/comparisons/{replayed}")
+        assert example["report"]["status"] == "fail", example["report"]["status"]
+        page = client.get(f"/checks/{replayed}").text
+        assert "Recorded example" in page and "best fix" in page, "replayed check lacks its banner or fixes"
+        assert "recorded example" in client.get("/").text
         assert client.post("/api/v1/jobs", json=baseline,
                            headers={"Origin": "http://evil.example"}).status_code == 403
         for page in ("/", "/checks/new", "/connections", f"/checks/{saved['id']}",
@@ -250,7 +258,7 @@ def run(stale_id):
         ], check=False, capture_output=True, text=True)
         assert result.returncode == 1, result.stderr
         assert json.loads(output.read_text())["status"] == "fail"
-    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, fix search, checks endpoint, judged check, UI, CLI, MCP")
+    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, fix search, checks endpoint, judged check, recorded replay, UI, CLI, MCP")
 
 
 if __name__ == "__main__":

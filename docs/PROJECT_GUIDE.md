@@ -14,7 +14,7 @@ AI application costs change with prompts, models, context, retries and execution
 - **Controlled improvement:** the analyst starts from a digest of the evidence CostGuard already computed and proposes up to three prompts. One click runs them; the runner measures each against the original baseline and policy, and the cheapest one that passes is highlighted.
 - **Real-model demo:** a support-triage suite run on any gateway model (local Ollama or cloud) from the overview page or `python -m costguard demo`.
 - **What-if pricing:** each report reprices both observed runs under other per-token prices and monthly traffic, holding behavior fixed.
-- **Verification:** 115 unit tests and the mock end-to-end workflow pass.
+- **Verification:** 122 unit tests and the mock end-to-end workflow pass.
 - **DevOps:** GitHub Actions builds the image, runs the unit tests, a cost gate on recorded runs (the verbose candidate is blocked, the fix passes, both shown in the job summary) and the end-to-end workflow on the Compose stack.
 
 ## Components and responsibilities

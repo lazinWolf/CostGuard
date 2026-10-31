@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from . import checks, db, diagnosis, events
+from . import checks, db, diagnosis, events, recorded
 from .economics import compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings, proposals_of
@@ -140,6 +140,21 @@ def fix_rows(row: dict) -> list[dict]:
     return rows
 
 
+def load_recorded(name: str = "support-triage") -> str:
+    """Load a recorded example (no model needed) and return the ID of its check."""
+    example = recorded.read(name)
+    if example is None:
+        raise NotFound("recorded example not found")
+    report_id = recorded.replay(example)
+    events.emit("example.loaded", name=name, report_id=report_id)
+    return report_id
+
+
+def recorded_reports() -> dict[str, dict]:
+    """Report ID -> the recorded example it belongs to, for the checks that were replayed."""
+    return {report_id: example for example in db.recorded_examples() for report_id in example["report_ids"]}
+
+
 def start_mock_demo() -> dict:
     """Queue the scripted offline demo. It only exists when Compose runs with COSTGUARD_DEMO=1."""
     if os.environ.get("COSTGUARD_DEMO") != "1":
@@ -213,12 +228,12 @@ def check_progress(candidate_job_id: str) -> dict:
 def list_checks(limit: int | None = None) -> list[dict]:
     """Checks, newest first. Every fix measured for a check is nested under the original check."""
     rows = {row["id"]: row for row in db.list_comparisons(limit)}
-    parents = db.fix_parents()
+    parents, replayed = db.fix_parents(), recorded_reports()
     checks: list[dict] = []
     for row in rows.values():
         row["correct"] = diagnosis.correct_answers(row["quality_baseline"], row["quality_candidate"],
                                                    row["quality_cases"])
-        row["fixes"] = []
+        row["fixes"], row["recorded"] = [], row["id"] in replayed
     for row in rows.values():
         root = row
         while parents.get(root["id"]) in rows:
@@ -241,6 +256,7 @@ class Check:
     breakdown: dict | None
     cases: list[dict]
     related: dict
+    recorded: dict | None  # The recorded example this check was replayed from, if it was.
     judge: dict | None  # Who scored the answers, with what rubric and at what cost, when a model did.
 
     @property
@@ -266,7 +282,7 @@ def get_check(report_id: str) -> Check:
         limits=diagnosis.limit_rows(saved["report"], saved["request"].get("policy")),
         breakdown=diagnosis.breakdown(saved["request"]["pricing"], baseline, candidate),
         cases=diagnosis.case_rows(saved["report"], baseline, candidate, inputs),
-        related=db.related_investigations(report_id),
+        related=db.related_investigations(report_id), recorded=recorded_reports().get(report_id),
         judge=judge and {"model": f"{judge.provider}/{judge.model}", "rubric": judge.rubric,
                          "spend": diagnosis.judge_spend(baseline, candidate)},
     )

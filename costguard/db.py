@@ -188,8 +188,8 @@ def get_baseline(suite_id: str) -> str | None:
         return row.artifact_id if row else None
 
 
-def save_comparison(baseline_id: str, candidate_id: str, request: dict, report: dict) -> str:
-    report_id = str(uuid4())
+def save_comparison(baseline_id: str, candidate_id: str, request: dict, report: dict, report_id: str | None = None) -> str:
+    report_id = report_id or str(uuid4())
     with session_scope() as session:
         session.add(ComparisonRow(
             id=report_id,
@@ -239,6 +239,14 @@ def fix_parents() -> dict[str, str]:
     with session_scope() as session:
         rows = session.scalars(select(InvestigationRow).options(defer(InvestigationRow.result))).all()
         return {fix["report_id"]: row.report_id for row in rows for fix in _fixes(row) if fix["report_id"]}
+
+
+def import_job(job_id: str, spec: ExperimentSpec, artifact_id: str) -> None:
+    """Record a run that already happened elsewhere as a completed job, so its artifact knows its source spec."""
+    with session_scope() as session:
+        if session.get(JobRow, job_id) is None:
+            session.add(JobRow(id=job_id, state="completed", spec=_json(spec), progress=len(spec.cases),
+                               total=len(spec.cases), artifact_id=artifact_id))
 
 
 def create_job(spec: ExperimentSpec) -> str:
@@ -405,6 +413,21 @@ def related_investigations(report_id: str) -> dict:
                             "analyst": f"{row.request['analyst']['provider']}/{row.request['analyst']['model']}",
                             "report_id": row.report_id}
         return {"investigations": [view(row) for row in rows], "source": view(source) if source else None}
+
+
+def import_investigation(item: dict) -> None:
+    """Record an investigation that already happened elsewhere, under its original ID."""
+    with session_scope() as session:
+        if session.get(InvestigationRow, item["id"]) is None:
+            session.add(InvestigationRow(
+                id=item["id"], report_id=item["report_id"], state=item["state"], request=item["request"],
+                result=item["result"], error=item["error"], fixes=item["fixes"]))
+
+
+def recorded_examples() -> list[dict]:
+    """The recorded examples that were loaded, each with the comparisons it contains."""
+    with session_scope() as session:
+        return [row.payload for row in session.scalars(select(SettingRow).where(SettingRow.id.like("recorded:%")))]
 
 
 def claim_investigation() -> str | None:

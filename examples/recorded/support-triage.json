@@ -1,0 +1,2961 @@
+{
+ "name": "support-triage",
+ "check_id": "984071f2-94ed-4955-9903-18ede8ea8db6",
+ "recorded": {
+  "model": "ollama/llama3.2:3b-instruct-q4_K_M",
+  "at": "2026-10-31T21:29:45.966332+00:00",
+  "analyst": "ollama/granite4.2:8b-q4_K_M"
+ },
+ "runs": [
+  {
+   "artifact": {
+    "schema_version": 1,
+    "artifact_id": "ffc85ae3-cc4e-4e7c-a4aa-15dd9f409258",
+    "suite_id": "support-triage",
+    "name": "triage-baseline-strict-label",
+    "configuration": {
+     "kind": "prompt",
+     "model": "llama3.2:3b-instruct-q4_K_M",
+     "limits": "{\"timeout_seconds\":180,\"max_output_tokens\":400,\"max_attempts\":1,\"max_tool_calls\":0,\"max_steps\":4,\"stop_after_usd\":null}",
+     "provider": "ollama",
+     "temperature": "0.0",
+     "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation."
+    },
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "status": "ok",
+      "latency_ms": "88.9449",
+      "calls": [
+       {
+        "call_id": "554034d2-b080-4a3a-b74a-0341ca424434",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 82,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "86.9193",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "86.9193",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "upload-crash",
+      "status": "ok",
+      "latency_ms": "37.1803",
+      "calls": [
+       {
+        "call_id": "d78c3d8a-0438-4031-8fc8-5b1916101fa2",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 82,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "35.2113",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "35.2113",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "change-email",
+      "status": "ok",
+      "latency_ms": "36.8214",
+      "calls": [
+       {
+        "call_id": "9787f246-09ac-49c9-9294-67f8d1c2be71",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 84,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "34.664",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "34.664",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "missing-package",
+      "status": "ok",
+      "latency_ms": "36.691",
+      "calls": [
+       {
+        "call_id": "ba6b57ba-15e5-478f-9cf6-97455f322db2",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 80,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "35.1581",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "35.1581",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+     },
+     {
+      "case_id": "vat-invoice",
+      "status": "ok",
+      "latency_ms": "31.3191",
+      "calls": [
+       {
+        "call_id": "09f727ec-707d-4e2e-8e1f-d6dac3233e10",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 81,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.3621",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.3621",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "blank-dashboard",
+      "status": "ok",
+      "latency_ms": "35.5628",
+      "calls": [
+       {
+        "call_id": "62d0ee87-a62e-4776-bbde-637350d4d35e",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 81,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "33.537",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "33.537",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "delete-account",
+      "status": "ok",
+      "latency_ms": "30.4623",
+      "calls": [
+       {
+        "call_id": "f079a7e3-481b-4c0f-8179-ffa0b262c391",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 80,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "28.3715",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "28.3715",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "express-upgrade",
+      "status": "ok",
+      "latency_ms": "30.588",
+      "calls": [
+       {
+        "call_id": "ec6c8b5a-1878-45ba-8890-2c0478a217d5",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 80,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "28.8367",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "28.8367",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+     }
+    ]
+   },
+   "spec": {
+    "suite_id": "support-triage",
+    "name": "triage-baseline-strict-label",
+    "kind": "prompt",
+    "provider": "ollama",
+    "model": "llama3.2:3b-instruct-q4_K_M",
+    "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation.",
+    "evaluator": "normalized",
+    "judge": null,
+    "temperature": 0.0,
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "upload-crash",
+      "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "change-email",
+      "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "missing-package",
+      "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+      "expected_text": "shipping"
+     },
+     {
+      "case_id": "vat-invoice",
+      "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "blank-dashboard",
+      "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "delete-account",
+      "prompt": "Please permanently delete my account and all of the data you hold about me.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "express-upgrade",
+      "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+      "expected_text": "shipping"
+     }
+    ],
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "limits": {
+     "timeout_seconds": 180,
+     "max_output_tokens": 400,
+     "max_attempts": 1,
+     "max_tool_calls": 0,
+     "max_steps": 4,
+     "stop_after_usd": null
+    }
+   }
+  },
+  {
+   "artifact": {
+    "schema_version": 1,
+    "artifact_id": "42087c8d-cada-4a97-b02c-942f31404580",
+    "suite_id": "support-triage",
+    "name": "triage-candidate-helpful-prompt",
+    "configuration": {
+     "kind": "prompt",
+     "model": "llama3.2:3b-instruct-q4_K_M",
+     "limits": "{\"timeout_seconds\":180,\"max_output_tokens\":400,\"max_attempts\":1,\"max_tool_calls\":0,\"max_steps\":4,\"stop_after_usd\":null}",
+     "provider": "ollama",
+     "temperature": "0.0",
+     "system_prompt": "You are a friendly and thorough customer support assistant. For every customer message: first restate the customer's problem in your own words, then explain step by step which support category fits best and why, then suggest a helpful first reply the support agent could send, and finally state the category. The categories are billing, technical, account, and shipping. Be empathetic and complete."
+    },
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "status": "ok",
+      "latency_ms": "1465.5578",
+      "calls": [
+       {
+        "call_id": "67ba30dd-4bfd-4b1e-99f8-d8d653d3d0fd",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 118,
+        "output_tokens": 182,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "1462.1866",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "1462.1866",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'm so sorry to hear that you've been charged twice for your subscription this month. To confirm, you're experiencing a duplicate payment, and you'd like us to refund the excess amount.\n\nBased on your issue, I would recommend our Technical Support category. This is because the problem you're facing is related to a technical issue with your subscription, specifically the duplicate payment. Our technical team can help investigate the cause of the duplicate payment and assist with resolving the issue.\n\nHere's a suggested first reply the support agent could send:\n\n\"Hello [Customer's Name], I apologize for the inconvenience you're experiencing with the duplicate payment on your subscription. I'm here to help you resolve the issue. Can you please provide me with your subscription details, including your order number and the date of the duplicate payment? This will help me investigate the cause of the issue and assist with a refund.\"\n\nTechnical Support category.",
+      "reasoning": null
+     },
+     {
+      "case_id": "upload-crash",
+      "status": "ok",
+      "latency_ms": "2527.4669",
+      "calls": [
+       {
+        "call_id": "6e9e26a1-9068-4c90-b27b-9c3fd8201c75",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 118,
+        "output_tokens": 278,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "2525.7014",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "2525.7014",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'm happy to help you with the issue you're experiencing with the app.\n\nTo summarize, you're saying that whenever you try to upload a photo that's larger than 5 MB, the app crashes and doesn't work properly.\n\nBased on your description, I think the best category for this issue would be the \"Technical\" category. This is because the problem is related to the app's functionality and performance, specifically with the photo upload feature.\n\nTo troubleshoot this issue, I would suggest the following steps:\n\n1. Try uploading a smaller photo to see if the app crashes again.\n2. Check if the app is working correctly with smaller photos.\n3. If the issue persists, try restarting the app or clearing its cache to see if that resolves the problem.\n\nHere's a possible first reply the support agent could send:\n\n\"Hi there, sorry to hear that the app is crashing when you try to upload a large photo. I'd be happy to help you troubleshoot the issue. Can you try uploading a smaller photo to see if the app crashes again? Additionally, have you tried restarting the app or clearing its cache to see if that resolves the problem? We'll do our best to get the app working smoothly for you.\"\n\nThe \"Technical\" category is the best fit for this issue because it involves the app's functionality and performance, and requires technical troubleshooting to resolve.",
+      "reasoning": null
+     },
+     {
+      "case_id": "change-email",
+      "status": "ok",
+      "latency_ms": "1714.3985",
+      "calls": [
+       {
+        "call_id": "9838f7c0-f29e-4e03-aa8c-d25e7176ef8e",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 120,
+        "output_tokens": 191,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "1712.4333",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "1712.4333",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'd be happy to help you with changing your email address on your profile.\n\nTo confirm, you'd like to update the email address associated with your account so that it no longer matches the old email address you're no longer using.\n\nFor this issue, I recommend reaching out to our Account Support team. They can assist you with updating your email address and ensuring that your account information is accurate and up-to-date.\n\nHere's a possible first reply the support agent could send:\n\n\"Hello! Thank you for reaching out to us about updating your email address on your profile. I'm happy to help you with this. To confirm, you'd like to update the email address associated with your account so that it no longer matches the old email address you're no longer using. I'll need to verify some information to ensure the update is successful. Can you please confirm your current email address and the new email address you'd like to use?\"\n\nCategory: Account",
+      "reasoning": null
+     },
+     {
+      "case_id": "missing-package",
+      "status": "ok",
+      "latency_ms": "1844.4934",
+      "calls": [
+       {
+        "call_id": "69ad2c8b-5b53-49c1-b9d1-eff88cf189be",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 116,
+        "output_tokens": 201,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "1841.6289",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "1841.6289",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'm so sorry to hear that you're experiencing an issue with your package. To confirm, you're saying that the tracking information shows that your package was delivered to your doorstep yesterday, but when you checked, there was no package there. Is that correct?\n\nBased on this information, I would recommend reaching out to our Technical Support category. This is because the issue seems to be related to the tracking information and the package not being delivered as expected, which falls under technical aspects of our shipping process.\n\nA helpful first reply the support agent could send is:\n\n\"Hello! I'm so sorry to hear that you're experiencing an issue with your package. I've checked the tracking information, and it does show that the package was delivered to your doorstep yesterday. However, it appears that the package was not actually delivered to you. I'd be happy to help you investigate further and look into this issue. Can you please provide me with your order number so I can look into this further?\"\n\nCategory: Technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "vat-invoice",
+      "status": "ok",
+      "latency_ms": "1798.3782",
+      "calls": [
+       {
+        "call_id": "b1b546aa-e632-4625-b8c3-33545cacc174",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 117,
+        "output_tokens": 205,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "1796.0684",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "1796.0684",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'm so sorry to hear that you're experiencing an issue with your invoice. To make sure I understand the issue correctly, you're saying that when you received your invoice, it included Value-Added Tax (VAT) even though you had entered your company's tax ID correctly during the checkout process. Is that right?\n\nBased on your description, I think the best category for this issue would be the \"Billing\" category. This is because the issue is related to the invoice and the VAT charge, which falls under the billing process.\n\nA helpful first reply the support agent could send would be:\n\n\"Thank you for reaching out to us about the VAT charge on your invoice. I'm happy to help you resolve this issue. Can you please confirm your company's tax ID that you entered during checkout? I'll look into this further and see what's causing the discrepancy.\"\n\nThe \"Billing\" category is the best fit for this issue because it involves the invoice and the VAT charge, which is a billing-related concern.",
+      "reasoning": null
+     },
+     {
+      "case_id": "blank-dashboard",
+      "status": "ok",
+      "latency_ms": "2285.637",
+      "calls": [
+       {
+        "call_id": "4b0194cd-1d15-4365-bd4f-347f883a1a1c",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 117,
+        "output_tokens": 260,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "2283.8304",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "2283.8304",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'm happy to help you with your issue. To summarize, you're experiencing a problem where the dashboard is not displaying correctly in Firefox, and instead, you're seeing a blank white page.\n\nBased on your description, I think the best category for this issue would be Technical. This is because the problem is related to the functionality of the dashboard, which is a technical aspect of our service.\n\nTo troubleshoot this issue, I would suggest the following steps:\n\n1. Can you try clearing your browser's cache and cookies to see if that resolves the issue?\n2. Are you using any extensions or plugins in Firefox that might be interfering with the dashboard?\n3. Have you tried accessing the dashboard in a different browser to see if the issue is specific to Firefox?\n\nA helpful first reply I could send to you would be:\n\n\"Hi there, sorry to hear that you're experiencing issues with the dashboard in Firefox. I'd be happy to help you troubleshoot the problem. Can you try clearing your browser's cache and cookies, and let me know if that resolves the issue? Additionally, are you using any extensions or plugins in Firefox that might be interfering with the dashboard? I'll do my best to help you get back to seeing the dashboard correctly.\"\n\nThe category for this issue is Technical.",
+      "reasoning": null
+     },
+     {
+      "case_id": "delete-account",
+      "status": "ok",
+      "latency_ms": "2467.088",
+      "calls": [
+       {
+        "call_id": "cb3a35cc-7018-4547-af79-1a6d5556fb87",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 116,
+        "output_tokens": 268,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "2465.3113",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "2465.3113",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'm so sorry to hear that you're looking to delete your account and have all associated data removed. To confirm, you'd like to permanently delete your account and have all personal data, including any information we may have stored about you, completely erased from our system.\n\nTo assist you with this request, I'd like to guide you through the next steps. Based on your request, I think the best support category for this issue would be the \"Account\" category.\n\nTo delete your account, I'll need to follow a specific process to ensure that all associated data is properly removed. Here's a step-by-step guide on how to proceed:\n\n1. Please log in to your account and navigate to the \"Account Settings\" or \"My Account\" section.\n2. Look for the \"Delete Account\" or \"Permanently Delete Account\" option and click on it.\n3. Confirm that you want to delete your account and all associated data by clicking on the \"Delete Account\" button.\n\nIf you're unable to access your account settings or need further assistance, I can also provide you with an alternative method to delete your account.\n\nBefore we proceed, I want to confirm that you're certain about deleting your account and would like to see a confirmation of the deletion. Is there anything else I can help you with?\n\nCategory: Account",
+      "reasoning": null
+     },
+     {
+      "case_id": "express-upgrade",
+      "status": "ok",
+      "latency_ms": "2028.7109",
+      "calls": [
+       {
+        "call_id": "1e450b39-f629-4011-a57b-53a26062c104",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 116,
+        "output_tokens": 224,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "2026.8894",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "2026.8894",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "I'd like to summarize your concern: You've placed an order, but it hasn't shipped yet, and you're wondering if you can upgrade to express delivery instead.\n\nTo help you with this, I'd recommend checking our shipping options and estimated delivery times. Since your order hasn't shipped yet, we can't guarantee the exact delivery time. However, I can guide you on how to proceed.\n\nTo upgrade to express delivery, you'll need to contact our customer service team. We can assist you with the upgrade, but please note that express delivery may incur an additional fee.\n\nHere's a helpful first reply the support agent could send:\n\n\"Hello! Thank you for reaching out to us about your order. I apologize for the delay in shipping. I'd be happy to help you with upgrading to express delivery. However, please note that this may incur an additional fee. Would you like me to provide you with more information on the upgrade options and costs? Additionally, I can also provide you with an estimated delivery time for your original order. Please let me know how I can assist you further.\"\n\nCategory: Shipping",
+      "reasoning": null
+     }
+    ]
+   },
+   "spec": {
+    "suite_id": "support-triage",
+    "name": "triage-candidate-helpful-prompt",
+    "kind": "prompt",
+    "provider": "ollama",
+    "model": "llama3.2:3b-instruct-q4_K_M",
+    "system_prompt": "You are a friendly and thorough customer support assistant. For every customer message: first restate the customer's problem in your own words, then explain step by step which support category fits best and why, then suggest a helpful first reply the support agent could send, and finally state the category. The categories are billing, technical, account, and shipping. Be empathetic and complete.",
+    "evaluator": "normalized",
+    "judge": null,
+    "temperature": 0.0,
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "upload-crash",
+      "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "change-email",
+      "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "missing-package",
+      "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+      "expected_text": "shipping"
+     },
+     {
+      "case_id": "vat-invoice",
+      "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "blank-dashboard",
+      "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "delete-account",
+      "prompt": "Please permanently delete my account and all of the data you hold about me.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "express-upgrade",
+      "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+      "expected_text": "shipping"
+     }
+    ],
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "limits": {
+     "timeout_seconds": 180,
+     "max_output_tokens": 400,
+     "max_attempts": 1,
+     "max_tool_calls": 0,
+     "max_steps": 4,
+     "stop_after_usd": null
+    }
+   }
+  },
+  {
+   "artifact": {
+    "schema_version": 1,
+    "artifact_id": "c24ad16d-97b0-45f6-9ba5-b252eed98e56",
+    "suite_id": "support-triage",
+    "name": "analyst-fix-1a",
+    "configuration": {
+     "kind": "prompt",
+     "model": "llama3.2:3b-instruct-q4_K_M",
+     "limits": "{\"timeout_seconds\":180,\"max_output_tokens\":400,\"max_attempts\":1,\"max_tool_calls\":0,\"max_steps\":4,\"stop_after_usd\":null}",
+     "provider": "ollama",
+     "temperature": "0.0",
+     "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation."
+    },
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "status": "ok",
+      "latency_ms": "5253.4521",
+      "calls": [
+       {
+        "call_id": "e3df7a34-2750-4b57-b6e7-3d7cd0118ee3",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 82,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "5251.233",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "5251.233",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "upload-crash",
+      "status": "ok",
+      "latency_ms": "35.6825",
+      "calls": [
+       {
+        "call_id": "d72c951c-eee6-450e-9cf1-f93dd898e87b",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 82,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "33.6624",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "33.6624",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "change-email",
+      "status": "ok",
+      "latency_ms": "32.9013",
+      "calls": [
+       {
+        "call_id": "78ec1e05-a951-4ab4-872b-112fe4228a13",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 84,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.6192",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.6192",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "missing-package",
+      "status": "ok",
+      "latency_ms": "31.9335",
+      "calls": [
+       {
+        "call_id": "ed8a8660-01d1-4107-b965-11940f32d36b",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 80,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.6374",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.6374",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+     },
+     {
+      "case_id": "vat-invoice",
+      "status": "ok",
+      "latency_ms": "31.6363",
+      "calls": [
+       {
+        "call_id": "b990edab-921c-48d6-805b-0fda5a91fc60",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 81,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.6349",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.6349",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "blank-dashboard",
+      "status": "ok",
+      "latency_ms": "31.1974",
+      "calls": [
+       {
+        "call_id": "c1155e93-9309-4a52-81fe-538aece6e2a9",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 81,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.3727",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.3727",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "delete-account",
+      "status": "ok",
+      "latency_ms": "31.965",
+      "calls": [
+       {
+        "call_id": "ff7ac982-6fae-4611-85a5-7ec67d036765",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 80,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.3424",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.3424",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "express-upgrade",
+      "status": "ok",
+      "latency_ms": "32.3326",
+      "calls": [
+       {
+        "call_id": "73ffcad9-c8d3-482f-a26a-ad5ed89fef96",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 80,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.9259",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.9259",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+     }
+    ]
+   },
+   "spec": {
+    "suite_id": "support-triage",
+    "name": "analyst-fix-1a",
+    "kind": "prompt",
+    "provider": "ollama",
+    "model": "llama3.2:3b-instruct-q4_K_M",
+    "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation.",
+    "evaluator": "normalized",
+    "judge": null,
+    "temperature": 0.0,
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "upload-crash",
+      "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "change-email",
+      "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "missing-package",
+      "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+      "expected_text": "shipping"
+     },
+     {
+      "case_id": "vat-invoice",
+      "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "blank-dashboard",
+      "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "delete-account",
+      "prompt": "Please permanently delete my account and all of the data you hold about me.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "express-upgrade",
+      "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+      "expected_text": "shipping"
+     }
+    ],
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "limits": {
+     "timeout_seconds": 180,
+     "max_output_tokens": 400,
+     "max_attempts": 1,
+     "max_tool_calls": 0,
+     "max_steps": 4,
+     "stop_after_usd": null
+    }
+   }
+  },
+  {
+   "artifact": {
+    "schema_version": 1,
+    "artifact_id": "7162b11e-b8c6-4645-91b2-2572c0c8a342",
+    "suite_id": "support-triage",
+    "name": "analyst-fix-1b",
+    "configuration": {
+     "kind": "prompt",
+     "model": "llama3.2:3b-instruct-q4_K_M",
+     "limits": "{\"timeout_seconds\":180,\"max_output_tokens\":400,\"max_attempts\":1,\"max_tool_calls\":0,\"max_steps\":4,\"stop_after_usd\":null}",
+     "provider": "ollama",
+     "temperature": "0.0",
+     "system_prompt": "You route customer support messages. Reply with exactly one category (billing, technical, account, or shipping) in lowercase; no explanations or extra words."
+    },
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "status": "ok",
+      "latency_ms": "41.0971",
+      "calls": [
+       {
+        "call_id": "a69bc1ec-d8f5-4dd4-bd66-b7bd39f15890",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 72,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "39.1711",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "39.1711",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "billing",
+      "reasoning": null
+     },
+     {
+      "case_id": "upload-crash",
+      "status": "ok",
+      "latency_ms": "33.3359",
+      "calls": [
+       {
+        "call_id": "90036bd1-6873-42df-867d-7fcb060a718f",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 72,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.8471",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.8471",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "change-email",
+      "status": "ok",
+      "latency_ms": "33.2285",
+      "calls": [
+       {
+        "call_id": "b59502d4-3c19-4f28-a0a3-a41f5fe37745",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 74,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.8351",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.8351",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "missing-package",
+      "status": "ok",
+      "latency_ms": "32.8058",
+      "calls": [
+       {
+        "call_id": "78d4dbaf-0929-49ab-b773-bd2099dd343e",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 70,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.4672",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.4672",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+     },
+     {
+      "case_id": "vat-invoice",
+      "status": "ok",
+      "latency_ms": "34.6798",
+      "calls": [
+       {
+        "call_id": "30a99c12-2b20-46a8-a172-c5ec7553072d",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 71,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "32.3847",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "32.3847",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "billing",
+      "reasoning": null
+     },
+     {
+      "case_id": "blank-dashboard",
+      "status": "ok",
+      "latency_ms": "32.7464",
+      "calls": [
+       {
+        "call_id": "827974cd-796f-4b02-a4d2-1d89978ded11",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 71,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.8767",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.8767",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "delete-account",
+      "status": "ok",
+      "latency_ms": "32.3439",
+      "calls": [
+       {
+        "call_id": "5aa0c864-3595-421e-8751-83cd5db24820",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 70,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.1377",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.1377",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "express-upgrade",
+      "status": "ok",
+      "latency_ms": "31.4393",
+      "calls": [
+       {
+        "call_id": "31c98dfe-6b43-4906-950c-3d6cb406f531",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 70,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.8558",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.8558",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+     }
+    ]
+   },
+   "spec": {
+    "suite_id": "support-triage",
+    "name": "analyst-fix-1b",
+    "kind": "prompt",
+    "provider": "ollama",
+    "model": "llama3.2:3b-instruct-q4_K_M",
+    "system_prompt": "You route customer support messages. Reply with exactly one category (billing, technical, account, or shipping) in lowercase; no explanations or extra words.",
+    "evaluator": "normalized",
+    "judge": null,
+    "temperature": 0.0,
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "upload-crash",
+      "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "change-email",
+      "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "missing-package",
+      "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+      "expected_text": "shipping"
+     },
+     {
+      "case_id": "vat-invoice",
+      "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "blank-dashboard",
+      "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "delete-account",
+      "prompt": "Please permanently delete my account and all of the data you hold about me.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "express-upgrade",
+      "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+      "expected_text": "shipping"
+     }
+    ],
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "limits": {
+     "timeout_seconds": 180,
+     "max_output_tokens": 400,
+     "max_attempts": 1,
+     "max_tool_calls": 0,
+     "max_steps": 4,
+     "stop_after_usd": null
+    }
+   }
+  },
+  {
+   "artifact": {
+    "schema_version": 1,
+    "artifact_id": "3f32ef27-f081-4bab-a4db-c50ec3634abe",
+    "suite_id": "support-triage",
+    "name": "analyst-fix-1c",
+    "configuration": {
+     "kind": "prompt",
+     "model": "llama3.2:3b-instruct-q4_K_M",
+     "limits": "{\"timeout_seconds\":180,\"max_output_tokens\":400,\"max_attempts\":1,\"max_tool_calls\":0,\"max_steps\":4,\"stop_after_usd\":null}",
+     "provider": "ollama",
+     "temperature": "0.0",
+     "system_prompt": "Classify each message as billing, technical, account, or shipping. Output only the category name in lowercase."
+    },
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "status": "ok",
+      "latency_ms": "40.1926",
+      "calls": [
+       {
+        "call_id": "20566918-90dd-468c-9490-ad008d898e98",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 64,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "38.5691",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "38.5691",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "billing",
+      "reasoning": null
+     },
+     {
+      "case_id": "upload-crash",
+      "status": "ok",
+      "latency_ms": "31.4694",
+      "calls": [
+       {
+        "call_id": "07c24b29-0d12-4064-b794-3d7900e3928a",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 64,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.9347",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.9347",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "change-email",
+      "status": "ok",
+      "latency_ms": "31.5566",
+      "calls": [
+       {
+        "call_id": "04f928d0-c992-4ff9-9bc5-2c0ca861f215",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 66,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.1092",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.1092",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "missing-package",
+      "status": "ok",
+      "latency_ms": "31.2799",
+      "calls": [
+       {
+        "call_id": "b955c31d-cc05-49d9-9803-26715604096b",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 62,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.0124",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.0124",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "shipping",
+      "reasoning": null
+     },
+     {
+      "case_id": "vat-invoice",
+      "status": "ok",
+      "latency_ms": "32.7162",
+      "calls": [
+       {
+        "call_id": "c312ebc1-9567-4a57-8a14-33877169ec36",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 63,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "30.0212",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "30.0212",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "billing",
+      "reasoning": null
+     },
+     {
+      "case_id": "blank-dashboard",
+      "status": "ok",
+      "latency_ms": "31.7889",
+      "calls": [
+       {
+        "call_id": "31ea1a4d-ca80-40bf-ac48-696383f9b518",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 63,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.4492",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.4492",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "technical",
+      "reasoning": null
+     },
+     {
+      "case_id": "delete-account",
+      "status": "ok",
+      "latency_ms": "31.1168",
+      "calls": [
+       {
+        "call_id": "8729e788-b37d-4440-bd96-47fc389b42df",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 62,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "29.3939",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "29.3939",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "1",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     },
+     {
+      "case_id": "express-upgrade",
+      "status": "ok",
+      "latency_ms": "33.0636",
+      "calls": [
+       {
+        "call_id": "cbbfcf58-78ee-4e32-9306-0fa74b270e56",
+        "step_id": "model-1",
+        "provider": "ollama",
+        "model": "llama3.2:3b-instruct-q4_K_M",
+        "input_tokens": 62,
+        "output_tokens": 2,
+        "usage_source": "gateway",
+        "status": "ok",
+        "latency_ms": "31.1351",
+        "attempt": 1,
+        "operation": "chat",
+        "tags": {}
+       }
+      ],
+      "steps": [
+       {
+        "step_id": "model-1",
+        "parent_step_id": null,
+        "kind": "model",
+        "name": "llama3.2:3b-instruct-q4_K_M",
+        "status": "ok",
+        "latency_ms": "31.1351",
+        "tags": {}
+       }
+      ],
+      "charges": [],
+      "quality_score": "0",
+      "evaluator": "normalized:v1",
+      "error": null,
+      "output": "account",
+      "reasoning": null
+     }
+    ]
+   },
+   "spec": {
+    "suite_id": "support-triage",
+    "name": "analyst-fix-1c",
+    "kind": "prompt",
+    "provider": "ollama",
+    "model": "llama3.2:3b-instruct-q4_K_M",
+    "system_prompt": "Classify each message as billing, technical, account, or shipping. Output only the category name in lowercase.",
+    "evaluator": "normalized",
+    "judge": null,
+    "temperature": 0.0,
+    "cases": [
+     {
+      "case_id": "duplicate-charge",
+      "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "upload-crash",
+      "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "change-email",
+      "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "missing-package",
+      "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+      "expected_text": "shipping"
+     },
+     {
+      "case_id": "vat-invoice",
+      "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+      "expected_text": "billing"
+     },
+     {
+      "case_id": "blank-dashboard",
+      "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+      "expected_text": "technical"
+     },
+     {
+      "case_id": "delete-account",
+      "prompt": "Please permanently delete my account and all of the data you hold about me.",
+      "expected_text": "account"
+     },
+     {
+      "case_id": "express-upgrade",
+      "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+      "expected_text": "shipping"
+     }
+    ],
+    "pricing": {
+     "version": "reference-rates-2026-10",
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "provider": "ollama",
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ]
+    },
+    "limits": {
+     "timeout_seconds": 180,
+     "max_output_tokens": 400,
+     "max_attempts": 1,
+     "max_tool_calls": 0,
+     "max_steps": 4,
+     "stop_after_usd": null
+    }
+   }
+  }
+ ],
+ "comparisons": [
+  {
+   "id": "984071f2-94ed-4955-9903-18ede8ea8db6",
+   "request": {
+    "policy": {
+     "max_quality_drop": "0",
+     "max_monthly_cost_usd": null,
+     "max_cost_increase_percent": "20",
+     "min_candidate_quality_score": null,
+     "max_candidate_mean_latency_ms": null,
+     "max_candidate_retries_per_case": null,
+     "max_candidate_tool_steps_per_case": null,
+     "max_candidate_agent_steps_per_case": null,
+     "max_candidate_cost_per_request_usd": null,
+     "max_candidate_model_calls_per_case": null
+    },
+    "pricing": {
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "provider": "ollama",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ],
+     "version": "reference-rates-2026-10"
+    },
+    "baseline_id": "ffc85ae3-cc4e-4e7c-a4aa-15dd9f409258",
+    "candidate_id": "42087c8d-cada-4a97-b02c-942f31404580",
+    "monthly_requests": 100000
+   }
+  },
+  {
+   "id": "24eb591c-c2ba-45cb-a269-60f9a044092f",
+   "request": {
+    "policy": {
+     "max_quality_drop": "0",
+     "max_monthly_cost_usd": null,
+     "max_cost_increase_percent": "20",
+     "min_candidate_quality_score": null,
+     "max_candidate_mean_latency_ms": null,
+     "max_candidate_retries_per_case": null,
+     "max_candidate_tool_steps_per_case": null,
+     "max_candidate_agent_steps_per_case": null,
+     "max_candidate_cost_per_request_usd": null,
+     "max_candidate_model_calls_per_case": null
+    },
+    "pricing": {
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "provider": "ollama",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ],
+     "version": "reference-rates-2026-10"
+    },
+    "baseline_id": "ffc85ae3-cc4e-4e7c-a4aa-15dd9f409258",
+    "candidate_id": "c24ad16d-97b0-45f6-9ba5-b252eed98e56",
+    "monthly_requests": 100000
+   }
+  },
+  {
+   "id": "286e9d33-86ae-4b9b-866d-157d44f6eeb0",
+   "request": {
+    "policy": {
+     "max_quality_drop": "0",
+     "max_monthly_cost_usd": null,
+     "max_cost_increase_percent": "20",
+     "min_candidate_quality_score": null,
+     "max_candidate_mean_latency_ms": null,
+     "max_candidate_retries_per_case": null,
+     "max_candidate_tool_steps_per_case": null,
+     "max_candidate_agent_steps_per_case": null,
+     "max_candidate_cost_per_request_usd": null,
+     "max_candidate_model_calls_per_case": null
+    },
+    "pricing": {
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "provider": "ollama",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ],
+     "version": "reference-rates-2026-10"
+    },
+    "baseline_id": "ffc85ae3-cc4e-4e7c-a4aa-15dd9f409258",
+    "candidate_id": "7162b11e-b8c6-4645-91b2-2572c0c8a342",
+    "monthly_requests": 100000
+   }
+  },
+  {
+   "id": "e7b8b907-61ac-48d9-85af-8f1af30467c1",
+   "request": {
+    "policy": {
+     "max_quality_drop": "0",
+     "max_monthly_cost_usd": null,
+     "max_cost_increase_percent": "20",
+     "min_candidate_quality_score": null,
+     "max_candidate_mean_latency_ms": null,
+     "max_candidate_retries_per_case": null,
+     "max_candidate_tool_steps_per_case": null,
+     "max_candidate_agent_steps_per_case": null,
+     "max_candidate_cost_per_request_usd": null,
+     "max_candidate_model_calls_per_case": null
+    },
+    "pricing": {
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "provider": "ollama",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ],
+     "version": "reference-rates-2026-10"
+    },
+    "baseline_id": "ffc85ae3-cc4e-4e7c-a4aa-15dd9f409258",
+    "candidate_id": "3f32ef27-f081-4bab-a4db-c50ec3634abe",
+    "monthly_requests": 100000
+   }
+  }
+ ],
+ "investigation": {
+  "id": "623698c9-e519-450f-9739-d365c19505a6",
+  "report_id": "984071f2-94ed-4955-9903-18ede8ea8db6",
+  "state": "completed",
+  "request": {
+   "analyst": {
+    "model": "granite4.2:8b-q4_K_M",
+    "provider": "ollama",
+    "max_calls": 8,
+    "stop_after_usd": "0.10",
+    "pricing_version": "reference-rates-2026-10",
+    "timeout_seconds": 300,
+    "max_output_tokens": 4096,
+    "input_per_million_usd": "0.1",
+    "output_per_million_usd": "0.4"
+   },
+   "question": "Explain the cost and quality change, inspect the cases that changed most, and propose a prompt experiment that restores quality at lower cost.",
+   "source_spec": {
+    "kind": "prompt",
+    "name": "triage-candidate-helpful-prompt",
+    "cases": [
+     {
+      "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+      "case_id": "duplicate-charge",
+      "expected_text": "billing"
+     },
+     {
+      "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+      "case_id": "upload-crash",
+      "expected_text": "technical"
+     },
+     {
+      "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+      "case_id": "change-email",
+      "expected_text": "account"
+     },
+     {
+      "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+      "case_id": "missing-package",
+      "expected_text": "shipping"
+     },
+     {
+      "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+      "case_id": "vat-invoice",
+      "expected_text": "billing"
+     },
+     {
+      "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+      "case_id": "blank-dashboard",
+      "expected_text": "technical"
+     },
+     {
+      "prompt": "Please permanently delete my account and all of the data you hold about me.",
+      "case_id": "delete-account",
+      "expected_text": "account"
+     },
+     {
+      "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+      "case_id": "express-upgrade",
+      "expected_text": "shipping"
+     }
+    ],
+    "judge": null,
+    "model": "llama3.2:3b-instruct-q4_K_M",
+    "limits": {
+     "max_steps": 4,
+     "max_attempts": 1,
+     "max_tool_calls": 0,
+     "stop_after_usd": null,
+     "timeout_seconds": 180,
+     "max_output_tokens": 400
+    },
+    "pricing": {
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "provider": "ollama",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ],
+     "version": "reference-rates-2026-10"
+    },
+    "provider": "ollama",
+    "suite_id": "support-triage",
+    "evaluator": "normalized",
+    "temperature": 0.0,
+    "system_prompt": "You are a friendly and thorough customer support assistant. For every customer message: first restate the customer's problem in your own words, then explain step by step which support category fits best and why, then suggest a helpful first reply the support agent could send, and finally state the category. The categories are billing, technical, account, and shipping. Be empathetic and complete."
+   }
+  },
+  "result": {
+   "calls": [
+    {
+     "status": "ok",
+     "cost_usd": "0.0012783",
+     "input_tokens": 3863,
+     "output_tokens": 2230,
+     "response_model": "granite4.2:8b-q4_K_M"
+    },
+    {
+     "status": "ok",
+     "cost_usd": "0.0009221",
+     "input_tokens": 4445,
+     "output_tokens": 1194,
+     "response_model": "granite4.2:8b-q4_K_M"
+    }
+   ],
+   "error": null,
+   "state": "completed",
+   "digest": {
+    "policy": {
+     "status": "fail",
+     "unknowns": [],
+     "violations": [
+      "cost increase 1044.82% exceeds 20%",
+      "quality fell from 0.75 to 0, more than the allowed drop of 0"
+     ]
+    },
+    "status": "fail",
+    "metrics": {
+     "assumptions": [
+      "Every workload case has equal weight.",
+      "Costs use the supplied pricing catalog and observed token counts.",
+      "Quality compares only cases scored in both baseline and candidate.",
+      "Monthly projection assumes the compared workload mix is representative."
+     ],
+     "quality_score": {
+      "delta": "-0.7500",
+      "baseline": "0.7500",
+      "candidate": "0.0000",
+      "delta_percent": "-100.00"
+     },
+     "mean_latency_ms": {
+      "delta": "1975.5201",
+      "baseline": "40.9462",
+      "candidate": "2016.4663",
+      "delta_percent": "4824.67"
+     },
+     "monthly_projection": {
+      "cost_usd": {
+       "delta": "9.32500000",
+       "baseline": "0.89250000",
+       "candidate": "10.21750000",
+       "delta_percent": "1044.82"
+      },
+      "requests": 100000
+     },
+     "cost_per_request_usd": {
+      "delta": "0.00009325",
+      "baseline": "0.00000893",
+      "candidate": "0.00010218",
+      "delta_percent": "1044.82"
+     },
+     "quality_cases_compared": 8
+    },
+    "pricing": {
+     "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+     "entries": [
+      {
+       "model": "llama3.2:3b-instruct-q4_K_M",
+       "provider": "ollama",
+       "input_per_million_usd": "0.1",
+       "output_per_million_usd": "0.4"
+      }
+     ],
+     "version": "reference-rates-2026-10"
+    },
+    "behavior": {
+     "retries": {
+      "delta": "0.0000",
+      "baseline": "0.0000",
+      "candidate": "0.0000",
+      "delta_percent": "0"
+     },
+     "tool_steps": {
+      "delta": "0.0000",
+      "baseline": "0.0000",
+      "candidate": "0.0000",
+      "delta_percent": "0"
+     },
+     "agent_steps": {
+      "delta": "0.0000",
+      "baseline": "0.0000",
+      "candidate": "0.0000",
+      "delta_percent": "0"
+     },
+     "model_calls": {
+      "delta": "0.0000",
+      "baseline": "1.0000",
+      "candidate": "1.0000",
+      "delta_percent": "0.00"
+     },
+     "p95_latency_ms": {
+      "delta": "2438.5220",
+      "baseline": "88.9449",
+      "candidate": "2527.4669",
+      "delta_percent": "2741.61"
+     },
+     "p95_case_cost_usd": {
+      "delta": "0.00011380",
+      "baseline": "0.00000920",
+      "candidate": "0.00012300",
+      "delta_percent": "1236.96"
+     }
+    },
+    "case_ids": [
+     "duplicate-charge",
+     "upload-crash",
+     "change-email",
+     "missing-package",
+     "vat-invoice",
+     "blank-dashboard",
+     "delete-account",
+     "express-upgrade"
+    ],
+    "report_id": "984071f2-94ed-4955-9903-18ede8ea8db6",
+    "case_count": 8,
+    "cost_drivers": {
+     "rows": [
+      {
+       "kind": "input",
+       "share": 4,
+       "cost_after": "0.000011725",
+       "cost_delta": "0.000003600",
+       "cost_before": "0.000008125",
+       "tokens_after": 117,
+       "tokens_before": 81
+      },
+      {
+       "kind": "output",
+       "share": 96,
+       "cost_after": "0.00009045",
+       "cost_delta": "0.00008965",
+       "cost_before": "8E-7",
+       "tokens_after": 226,
+       "tokens_before": 2
+      }
+     ],
+     "explanation": [
+      "96% of the change comes from output tokens: 2 \u2192 226 per case on average.",
+      "The model is writing longer responses."
+     ]
+    },
+    "evidence_ref": "comparison",
+    "model_deltas": [
+     {
+      "model": "llama3.2:3b-instruct-q4_K_M",
+      "provider": "ollama",
+      "cost_per_request_usd": {
+       "delta": "0.00009325",
+       "baseline": "0.00000893",
+       "candidate": "0.00010218",
+       "delta_percent": "1044.82"
+      }
+     }
+    ],
+    "changed_cases": [
+     {
+      "case_id": "upload-crash",
+      "message": "The app crashes every time I try to upload a photo larger than 5 MB.",
+      "baseline": {
+       "output": "technical",
+       "status": "ok",
+       "output_tokens": 2,
+       "quality_score": "1"
+      },
+      "cost_usd": {
+       "delta": "0.00011400",
+       "baseline": "0.00000900",
+       "candidate": "0.00012300",
+       "delta_percent": "1266.67"
+      },
+      "expected": "technical",
+      "candidate": {
+       "output": "I'm happy to help you with the issue you're experiencing with the app.\n\nTo summarize, you're saying that whenever you try to upload a photo that's larger than 5 MB, the app crashes and doesn't work properly.\n\nBased on your description, I think the best category for this issue would be the \"Technical",
+       "status": "ok",
+       "output_tokens": 278,
+       "quality_score": "0"
+      },
+      "lost_correctness": true
+     },
+     {
+      "case_id": "delete-account",
+      "message": "Please permanently delete my account and all of the data you hold about me.",
+      "baseline": {
+       "output": "account",
+       "status": "ok",
+       "output_tokens": 2,
+       "quality_score": "1"
+      },
+      "cost_usd": {
+       "delta": "0.00011000",
+       "baseline": "0.00000880",
+       "candidate": "0.00011880",
+       "delta_percent": "1250.00"
+      },
+      "expected": "account",
+      "candidate": {
+       "output": "I'm so sorry to hear that you're looking to delete your account and have all associated data removed. To confirm, you'd like to permanently delete your account and have all personal data, including any information we may have stored about you, completely erased from our system.\n\nTo assist you with t",
+       "status": "ok",
+       "output_tokens": 268,
+       "quality_score": "0"
+      },
+      "lost_correctness": true
+     },
+     {
+      "case_id": "blank-dashboard",
+      "message": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+      "baseline": {
+       "output": "technical",
+       "status": "ok",
+       "output_tokens": 2,
+       "quality_score": "1"
+      },
+      "cost_usd": {
+       "delta": "0.00010680",
+       "baseline": "0.00000890",
+       "candidate": "0.00011570",
+       "delta_percent": "1200.00"
+      },
+      "expected": "technical",
+      "candidate": {
+       "output": "I'm happy to help you with your issue. To summarize, you're experiencing a problem where the dashboard is not displaying correctly in Firefox, and instead, you're seeing a blank white page.\n\nBased on your description, I think the best category for this issue would be Technical. This is because the p",
+       "status": "ok",
+       "output_tokens": 260,
+       "quality_score": "0"
+      },
+      "lost_correctness": true
+     },
+     {
+      "case_id": "express-upgrade",
+      "message": "My order hasn't shipped yet. Can I switch it to express delivery?",
+      "baseline": {
+       "output": "shipping",
+       "status": "ok",
+       "output_tokens": 2,
+       "quality_score": "1"
+      },
+      "cost_usd": {
+       "delta": "0.00009240",
+       "baseline": "0.00000880",
+       "candidate": "0.00010120",
+       "delta_percent": "1050.00"
+      },
+      "expected": "shipping",
+      "candidate": {
+       "output": "I'd like to summarize your concern: You've placed an order, but it hasn't shipped yet, and you're wondering if you can upgrade to express delivery instead.\n\nTo help you with this, I'd recommend checking our shipping options and estimated delivery times. Since your order hasn't shipped yet, we can't ",
+       "status": "ok",
+       "output_tokens": 224,
+       "quality_score": "0"
+      },
+      "lost_correctness": true
+     }
+    ],
+    "configuration": {
+     "baseline": {
+      "kind": "prompt",
+      "model": "llama3.2:3b-instruct-q4_K_M",
+      "provider": "ollama",
+      "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation."
+     },
+     "candidate": {
+      "kind": "prompt",
+      "model": "llama3.2:3b-instruct-q4_K_M",
+      "provider": "ollama",
+      "system_prompt": "You are a friendly and thorough customer support assistant. For every customer message: first restate the customer's problem in your own words, then explain step by step which support category fits best and why, then suggest a helpful first reply the support agent could send, and finally state the category. The categories are billing, technical, account, and shipping. Be empathetic and complete."
+     }
+    },
+    "policy_limits": {
+     "max_quality_drop": "0",
+     "max_cost_increase_percent": "20"
+    },
+    "prompt_change": {
+     "words_added": 54,
+     "words_removed": 22,
+     "baseline_words": 30,
+     "candidate_words": 62
+    },
+    "evidence_notes": [],
+    "largest_case_deltas": [
+     {
+      "case_id": "upload-crash",
+      "cost_usd": {
+       "delta": "0.00011400",
+       "baseline": "0.00000900",
+       "candidate": "0.00012300",
+       "delta_percent": "1266.67"
+      }
+     },
+     {
+      "case_id": "delete-account",
+      "cost_usd": {
+       "delta": "0.00011000",
+       "baseline": "0.00000880",
+       "candidate": "0.00011880",
+       "delta_percent": "1250.00"
+      }
+     },
+     {
+      "case_id": "blank-dashboard",
+      "cost_usd": {
+       "delta": "0.00010680",
+       "baseline": "0.00000890",
+       "candidate": "0.00011570",
+       "delta_percent": "1200.00"
+      }
+     },
+     {
+      "case_id": "express-upgrade",
+      "cost_usd": {
+       "delta": "0.00009240",
+       "baseline": "0.00000880",
+       "candidate": "0.00010120",
+       "delta_percent": "1050.00"
+      }
+     },
+     {
+      "case_id": "vat-invoice",
+      "cost_usd": {
+       "delta": "0.00008480",
+       "baseline": "0.00000890",
+       "candidate": "0.00009370",
+       "delta_percent": "952.81"
+      }
+     },
+     {
+      "case_id": "missing-package",
+      "cost_usd": {
+       "delta": "0.00008320",
+       "baseline": "0.00000880",
+       "candidate": "0.00009200",
+       "delta_percent": "945.45"
+      }
+     },
+     {
+      "case_id": "change-email",
+      "cost_usd": {
+       "delta": "0.00007920",
+       "baseline": "0.00000920",
+       "candidate": "0.00008840",
+       "delta_percent": "860.87"
+      }
+     },
+     {
+      "case_id": "duplicate-charge",
+      "cost_usd": {
+       "delta": "0.00007560",
+       "baseline": "0.00000900",
+       "candidate": "0.00008460",
+       "delta_percent": "840.00"
+      }
+     }
+    ],
+    "can_propose_prompt_experiment": true
+   },
+   "events": [
+    {
+     "tool": "propose_fixes",
+     "result": {
+      "note": "Cases, model, prices and execution limits are preserved. Savings and quality require a run.",
+      "cases": 8,
+      "fixes": [
+       {
+        "name": "analyst-fix-1a",
+        "hypothesis": "Restoring exact baseline wording ensures reply is only the category name, eliminating explanatory text that caused quality drop to 0 and high output tokens",
+        "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation."
+       },
+       {
+        "name": "analyst-fix-1b",
+        "hypothesis": "Concise instruction to reply only with the category avoids generating summaries/reasoning, reducing output tokens from ~280 to ~2 and restoring quality",
+        "system_prompt": "You route customer support messages. Reply with exactly one category (billing, technical, account, or shipping) in lowercase; no explanations or extra words."
+       },
+       {
+        "name": "analyst-fix-1c",
+        "hypothesis": "Direct classification instruction prevents step-by-step reasoning, matching expected format and reducing token output cost",
+        "system_prompt": "Classify each message as billing, technical, account, or shipping. Output only the category name in lowercase."
+       }
+      ],
+      "model": "ollama/llama3.2:3b-instruct-q4_K_M",
+      "status": "awaiting_user_execution",
+      "evidence_ref": "proposal"
+     }
+    },
+    {
+     "tool": "finish_investigation",
+     "result": {
+      "status": "completed"
+     }
+    }
+   ],
+   "cost_usd": "0.0022004",
+   "proposals": [
+    {
+     "spec": {
+      "kind": "prompt",
+      "name": "analyst-fix-1a",
+      "cases": [
+       {
+        "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+        "case_id": "duplicate-charge",
+        "expected_text": "billing"
+       },
+       {
+        "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+        "case_id": "upload-crash",
+        "expected_text": "technical"
+       },
+       {
+        "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+        "case_id": "change-email",
+        "expected_text": "account"
+       },
+       {
+        "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+        "case_id": "missing-package",
+        "expected_text": "shipping"
+       },
+       {
+        "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+        "case_id": "vat-invoice",
+        "expected_text": "billing"
+       },
+       {
+        "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+        "case_id": "blank-dashboard",
+        "expected_text": "technical"
+       },
+       {
+        "prompt": "Please permanently delete my account and all of the data you hold about me.",
+        "case_id": "delete-account",
+        "expected_text": "account"
+       },
+       {
+        "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+        "case_id": "express-upgrade",
+        "expected_text": "shipping"
+       }
+      ],
+      "judge": null,
+      "model": "llama3.2:3b-instruct-q4_K_M",
+      "limits": {
+       "max_steps": 4,
+       "max_attempts": 1,
+       "max_tool_calls": 0,
+       "stop_after_usd": null,
+       "timeout_seconds": 180,
+       "max_output_tokens": 400
+      },
+      "pricing": {
+       "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+       "entries": [
+        {
+         "model": "llama3.2:3b-instruct-q4_K_M",
+         "provider": "ollama",
+         "input_per_million_usd": "0.1",
+         "output_per_million_usd": "0.4"
+        }
+       ],
+       "version": "reference-rates-2026-10"
+      },
+      "provider": "ollama",
+      "suite_id": "support-triage",
+      "evaluator": "normalized",
+      "temperature": 0.0,
+      "system_prompt": "You route customer support messages. Classify the message into exactly one category: billing, technical, account, or shipping. Reply with the category name only, in lowercase, with no punctuation or explanation."
+     },
+     "hypothesis": "Restoring exact baseline wording ensures reply is only the category name, eliminating explanatory text that caused quality drop to 0 and high output tokens"
+    },
+    {
+     "spec": {
+      "kind": "prompt",
+      "name": "analyst-fix-1b",
+      "cases": [
+       {
+        "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+        "case_id": "duplicate-charge",
+        "expected_text": "billing"
+       },
+       {
+        "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+        "case_id": "upload-crash",
+        "expected_text": "technical"
+       },
+       {
+        "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+        "case_id": "change-email",
+        "expected_text": "account"
+       },
+       {
+        "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+        "case_id": "missing-package",
+        "expected_text": "shipping"
+       },
+       {
+        "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+        "case_id": "vat-invoice",
+        "expected_text": "billing"
+       },
+       {
+        "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+        "case_id": "blank-dashboard",
+        "expected_text": "technical"
+       },
+       {
+        "prompt": "Please permanently delete my account and all of the data you hold about me.",
+        "case_id": "delete-account",
+        "expected_text": "account"
+       },
+       {
+        "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+        "case_id": "express-upgrade",
+        "expected_text": "shipping"
+       }
+      ],
+      "judge": null,
+      "model": "llama3.2:3b-instruct-q4_K_M",
+      "limits": {
+       "max_steps": 4,
+       "max_attempts": 1,
+       "max_tool_calls": 0,
+       "stop_after_usd": null,
+       "timeout_seconds": 180,
+       "max_output_tokens": 400
+      },
+      "pricing": {
+       "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+       "entries": [
+        {
+         "model": "llama3.2:3b-instruct-q4_K_M",
+         "provider": "ollama",
+         "input_per_million_usd": "0.1",
+         "output_per_million_usd": "0.4"
+        }
+       ],
+       "version": "reference-rates-2026-10"
+      },
+      "provider": "ollama",
+      "suite_id": "support-triage",
+      "evaluator": "normalized",
+      "temperature": 0.0,
+      "system_prompt": "You route customer support messages. Reply with exactly one category (billing, technical, account, or shipping) in lowercase; no explanations or extra words."
+     },
+     "hypothesis": "Concise instruction to reply only with the category avoids generating summaries/reasoning, reducing output tokens from ~280 to ~2 and restoring quality"
+    },
+    {
+     "spec": {
+      "kind": "prompt",
+      "name": "analyst-fix-1c",
+      "cases": [
+       {
+        "prompt": "I was charged twice for my subscription this month. Can you refund the duplicate payment?",
+        "case_id": "duplicate-charge",
+        "expected_text": "billing"
+       },
+       {
+        "prompt": "The app crashes every time I try to upload a photo larger than 5 MB.",
+        "case_id": "upload-crash",
+        "expected_text": "technical"
+       },
+       {
+        "prompt": "How do I change the email address on my profile? I no longer use the old one.",
+        "case_id": "change-email",
+        "expected_text": "account"
+       },
+       {
+        "prompt": "My package was marked as delivered yesterday, but nothing arrived at my door.",
+        "case_id": "missing-package",
+        "expected_text": "shipping"
+       },
+       {
+        "prompt": "Your invoice adds VAT even though I entered our company's tax ID at checkout.",
+        "case_id": "vat-invoice",
+        "expected_text": "billing"
+       },
+       {
+        "prompt": "Since this morning's update the dashboard only shows a blank white page in Firefox.",
+        "case_id": "blank-dashboard",
+        "expected_text": "technical"
+       },
+       {
+        "prompt": "Please permanently delete my account and all of the data you hold about me.",
+        "case_id": "delete-account",
+        "expected_text": "account"
+       },
+       {
+        "prompt": "My order hasn't shipped yet. Can I switch it to express delivery?",
+        "case_id": "express-upgrade",
+        "expected_text": "shipping"
+       }
+      ],
+      "judge": null,
+      "model": "llama3.2:3b-instruct-q4_K_M",
+      "limits": {
+       "max_steps": 4,
+       "max_attempts": 1,
+       "max_tool_calls": 0,
+       "stop_after_usd": null,
+       "timeout_seconds": 180,
+       "max_output_tokens": 400
+      },
+      "pricing": {
+       "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
+       "entries": [
+        {
+         "model": "llama3.2:3b-instruct-q4_K_M",
+         "provider": "ollama",
+         "input_per_million_usd": "0.1",
+         "output_per_million_usd": "0.4"
+        }
+       ],
+       "version": "reference-rates-2026-10"
+      },
+      "provider": "ollama",
+      "suite_id": "support-triage",
+      "evaluator": "normalized",
+      "temperature": 0.0,
+      "system_prompt": "Classify each message as billing, technical, account, or shipping. Output only the category name in lowercase."
+     },
+     "hypothesis": "Direct classification instruction prevents step-by-step reasoning, matching expected format and reducing token output cost"
+    }
+   ],
+   "conclusion": {
+    "summary": "The candidate prompt change from baseline caused all changed cases to lose correctness (quality score 0 vs 1), increased output tokens from ~2 to ~270 per case (~135x increase), and raised cost per request by 1044.82% (exceeding the 20% limit). The simplest fix is to restore or closely match the baseline wording that requires only the category name in lowercase.",
+    "findings": [
+     {
+      "text": "Candidate responses include full summaries and explanations (e.g., 'I'm happy to help you with the issue you're experiencing...', 'To summarize, you're saying that...') while baseline responses were just 'technical' etc. with 2 output tokens. This caused output tokens to rise from ~2 to ~278 tokens per case, matching cost_drivers showing 96% of cost delta from output tokens.",
+      "evidence": [
+       "comparison"
+      ]
+     },
+     {
+      "text": "All four shown changed cases received quality_score 0 in candidate (vs baseline quality_score 1). Policy max_quality_drop is 0, so this violates the policy \u2013 quality fell 100% (>0).",
+      "evidence": [
+       "comparison"
+      ]
+     },
+     {
+      "text": "Cost per request rose 1044.82% (baseline $0.00000893 \u2192 candidate $0.0010218), driven by output token increase: 2 \u2192 226 tokens average per case, with 96% of the delta coming from output cost. Monthly projection cost rose 1044.82% ($0.8925 \u2192 $10.2175 USD).",
+      "evidence": [
+       "comparison"
+      ]
+     },
+     {
+      "text": "Fix hypotheses target the root cause: the candidate prompt explicitly instructs step-by-step reasoning and friendly replies, causing long outputs. Restoring baseline wording ('Reply with the category name only, in lowercase, with no punctuation or explanation') or similar concise instructions should avoid extra text, reduce tokens, and restore quality.",
+      "evidence": [
+       "comparison",
+       "proposal"
+      ]
+     }
+    ],
+    "hypotheses": [
+     "Restoring exact baseline wording ensures reply is only the category name, eliminating explanatory text that caused quality drop to 0 and high output tokens",
+     "Concise instruction to reply only with the category avoids generating summaries/reasoning, reducing output tokens from ~280 to ~2 and restoring quality",
+     "Direct classification instruction prevents step-by-step reasoning, matching expected format and reducing token output cost"
+    ],
+    "next_steps": [
+     "Measure fixes against baseline using same policy_limits (max_cost_increase_percent 20, max_quality_drop 0). Record token counts and quality scores for changed cases.",
+     "Validate that the chosen fix (e.g., baseline wording) produces correct single-category outputs for all 8 cases without explanatory text.",
+     "Check if any minimal wording variation could reduce words slightly while still ensuring only category output (e.g., 'Reply with exactly one category: billing, technical, account, or shipping. No explanations.')"
+    ]
+   },
+   "cost_known": true,
+   "known_cost_usd": "0.0022004",
+   "prompt_version": "economic-investigator:v4"
+  },
+  "error": null,
+  "fixes": [
+   {
+    "name": "analyst-fix-1a",
+    "job_id": "57e2353c-5026-5b1c-b645-cb3f5b4a8323",
+    "report_id": "24eb591c-c2ba-45cb-a269-60f9a044092f"
+   },
+   {
+    "name": "analyst-fix-1b",
+    "job_id": "ffdb4066-1937-512c-90b3-f37e1841df61",
+    "report_id": "286e9d33-86ae-4b9b-866d-157d44f6eeb0"
+   },
+   {
+    "name": "analyst-fix-1c",
+    "job_id": "b683ad46-3673-52e4-87a4-84bacddef4ed",
+    "report_id": "e7b8b907-61ac-48d9-85af-8f1af30467c1"
+   }
+  ]
+ }
+}

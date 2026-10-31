@@ -28,6 +28,12 @@ def start_demo():
     return service.start_mock_demo()
 
 
+@router.post("/examples/recorded")
+def load_recorded():
+    """Load the recorded example: a real check, analyst run and measured fixes, replayed without any model."""
+    return {"report_id": service.load_recorded()}
+
+
 @router.post("/checks", status_code=202)
 def create_check(data: CheckInput):
     """Run a baseline and a candidate on a gateway model and compare them; may incur provider charges."""
