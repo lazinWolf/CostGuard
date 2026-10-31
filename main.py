@@ -1,8 +1,11 @@
 import os
 from urllib.parse import urlparse
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from costguard import ComparisonReport, ComparisonRequest, compare_workloads, service
@@ -21,6 +24,7 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(web_router)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "costguard" / "static"), name="static")
 
 
 # Domain errors from the service layer become HTTP statuses here; the CLI and MCP map them their own way.

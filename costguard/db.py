@@ -213,6 +213,12 @@ def list_comparisons(limit: int | None = None) -> list[dict]:
                                       ComparisonRow.report["status"].astext.label("status"),
                                       ComparisonRow.report["economic"]["cost_per_request_usd"]["delta_percent"]
                                       .astext.label("cost_change"),
+                                      ComparisonRow.report["economic"]["quality_score"]["baseline"]
+                                      .astext.label("quality_baseline"),
+                                      ComparisonRow.report["economic"]["quality_score"]["candidate"]
+                                      .astext.label("quality_candidate"),
+                                      ComparisonRow.report["economic"]["quality_cases_compared"]
+                                      .astext.label("quality_cases"),
                                       left.name.label("baseline_name"), right.name.label("candidate_name"),
                                       right.payload["configuration"]["model"].astext.label("model"))
                                .join(left, left.id == ComparisonRow.baseline_id)
@@ -221,7 +227,17 @@ def list_comparisons(limit: int | None = None) -> list[dict]:
         return [{"id": r.id, "baseline_id": r.baseline_id, "candidate_id": r.candidate_id,
                  "status": r.status, "created_at": r.created_at.isoformat(),
                  "baseline_name": r.baseline_name, "candidate_name": r.candidate_name,
-                 "model": r.model, "cost_change": r.cost_change} for r in rows]
+                 "model": r.model, "cost_change": r.cost_change,
+                 "quality_baseline": r.quality_baseline, "quality_candidate": r.quality_candidate,
+                 "quality_cases": int(r.quality_cases) if r.quality_cases else None} for r in rows]
+
+
+def fix_parents() -> dict[str, str]:
+    """For each comparison that measured an analyst's fix: the comparison that was investigated."""
+    with session_scope() as session:
+        rows = session.execute(select(InvestigationRow.proposal_report_id, InvestigationRow.report_id)
+                               .where(InvestigationRow.proposal_report_id.is_not(None))).all()
+        return {fix: parent for fix, parent in rows}
 
 
 def create_job(spec: ExperimentSpec) -> str:

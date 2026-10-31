@@ -1,0 +1,83 @@
+{# The "Explain and fix" section of a check. Needs: analyst, check, prompts, r (the report). #}
+{% from "_macros.html" import pill, unsupported %}
+{% set item = analyst.investigation %}{% set settings = analyst.settings %}
+<section class="card" id="explain"><h2>Explain and fix</h2>
+{% if not item %}
+  {% if settings %}
+    <p class="lede">An analyst model (<code>{{settings.provider}}/{{settings.model}}</code>) reads this check's evidence through four read-only tools, explains what changed and proposes a prompt to try. It cannot run anything itself; you approve every run. Its calls are priced and recorded separately.</p>
+    <p class="row"><button onclick="askAnalyst()">{{'Ask the analyst anyway' if r.status == 'pass' else 'Ask the analyst why'}}</button>
+      <span class="small muted">Up to {{settings.max_calls}} model calls. May incur provider charges.</span></p>
+    <p id="message" class="notice warn" hidden></p>
+  {% else %}
+    <p>No analyst model is configured. <a href="/connections">Choose one on Connections</a> to have this check explained.</p>
+  {% endif %}
+{% else %}
+  {% set analyst_model = item.request.analyst %}{% set proposal = analyst.proposal %}{% set outcome = analyst.outcome %}{% set result = item.result %}
+  <div class="row">{{pill(item.state)}}
+    <span><code>{{analyst_model.provider}}/{{analyst_model.model}}</code></span>
+    <span class="muted small">{{result.get('calls', [])|length}} of {{analyst_model.max_calls}} model calls · cost <strong>{{('$' ~ result.cost_usd) if result.get('cost_known') else 'unknown'}}</strong></span>
+    {% if analyst.active %}<button class="secondary" onclick="action('cancel')">Stop after the current call</button>{% endif %}</div>
+  <p id="message" class="notice warn" hidden></p>
+
+  {% set tone = outcome.status if outcome else 'fail' if item.state in ['failed', 'interrupted', 'cancelled'] else 'not_evaluated' %}
+  <div class="verdict {{tone}}">
+    {% if outcome %}<div class="word">Fix {{'passes' if outcome.status == 'pass' else 'fails' if outcome.status == 'fail' else 'is inconclusive'}}</div>
+      <p>Against the original baseline: {{outcome.cost|usd}} per request (baseline {{analyst.variants[0].cost|usd}}){% if outcome.quality is not none %}, {{(outcome.quality|float * outcome.cases)|round|int}} of {{outcome.cases}} answers correct (baseline {{(analyst.variants[0].quality|float * analyst.variants[0].cases)|round|int}}){% endif %}.</p>
+      <p class="row">{% if outcome.status != 'pass' %}<a class="button" href="/checks/{{item.proposal_report_id}}#explain">Investigate why it {{'failed' if outcome.status == 'fail' else 'is inconclusive'}}</a>{% endif %}
+        <a class="button secondary" href="/checks/{{item.proposal_report_id}}">Open the fix check</a></p>
+    {% elif analyst.active %}<div class="word">Working</div><p>It reads the evidence step by step (see “What the analyst did”). This page updates by itself.</p>
+    {% elif item.state != 'completed' %}<div class="word">Stopped</div><p>{{item.error}}</p><p class="small">Small local models often can't follow the tool workflow. Choose a stronger analyst on <a href="/connections">Connections</a>, then ask again.</p>
+    {% elif proposal and not item.proposal_job_id %}<div class="word">Next step</div><p>Test the proposed prompt: it sends the same {{proposal.spec.cases|length}} cases to {{proposal.spec.provider}}/{{proposal.spec.model}} and compares the result with the original baseline.</p>
+      <p class="row"><button onclick="action('run-proposal')">Run the proposed fix ({{proposal.spec.cases|length}} model calls)</button> <span class="small muted">May incur provider charges.</span></p>
+    {% elif analyst.proposal_job %}<div class="word">Testing the fix</div><p>Running the proposed prompt: {{analyst.proposal_job.progress}} of {{analyst.proposal_job.total}} cases. The result opens here when it finishes. <a href="/jobs/{{analyst.proposal_job.id}}">Watch the run</a></p>
+    {% else %}<div class="word">Done</div><p>The analyst did not propose a prompt change{{' because this check has no runnable source experiment' if not item.request.source_spec}}.</p>{% endif %}
+  </div>
+
+  {% if analyst.answer %}{% set answer = analyst.answer %}
+    <h3>What the analyst found</h3>
+    <p class="lead">{{answer.summary}}</p>{{unsupported(answer.summary_unsupported)}}
+    <ul class="findings">{% for finding in answer.findings %}<li>{{finding.text}}
+      <div class="row small">{% for ref in finding.links %}<a class="chip" href="{{ref.href}}">{{ref.label}}</a>{% endfor %}
+        {% if finding.unsupported %}{{unsupported(finding.unsupported)}}{% elif finding.quotes_numbers %}<span class="check ok">✓ numbers found in the evidence</span>{% endif %}</div></li>{% endfor %}</ul>
+    {% if answer.hypotheses or answer.next_steps %}<details><summary>Not yet proven, and what to measure next</summary>
+      {% if answer.hypotheses %}<h3>Not yet proven</h3><ul>{% for text in answer.hypotheses %}<li>{{text}}</li>{% endfor %}</ul>{% endif %}
+      {% if answer.next_steps %}<h3>Worth measuring next</h3><ul>{% for text in answer.next_steps %}<li>{{text}}</li>{% endfor %}</ul>{% endif %}</details>{% endif %}
+    <p class="muted small">This is the model's reading of the evidence. CostGuard checks that every number it quotes appears in what it inspected (a presence check, not proof). Costs and the verdict always come from the check, never from the analyst.</p>
+  {% endif %}
+
+  {% if proposal %}
+    <h3 id="proposal">Proposed fix</h3>
+    <p>{{proposal.rationale}}</p>
+    <p class="muted small">Prompt length: baseline {{prompts.baseline.split()|length}} words · candidate {{prompts.candidate.split()|length}} words · proposal {{proposal.spec.system_prompt.split()|length}} words. Every prompt word is paid on every request.</p>
+    {% if proposal.spec.system_prompt == prompts.baseline %}<p class="notice">The proposal is identical to the baseline prompt. Running it confirms that reverting fixes the regression.</p>
+    {% else %}<div class="prompts">
+      <div><h3>Baseline prompt</h3><div class="prompt" id="p-baseline" data-diff-left="p-proposal">{{prompts.baseline}}</div></div>
+      <div><h3>Proposed prompt, changes from the baseline</h3><div class="prompt" id="p-proposal">{{proposal.spec.system_prompt}}</div></div></div>
+    {% endif %}
+    <details><summary class="small">Full experiment settings</summary><pre>{{proposal.spec|tojson(indent=2)}}</pre></details>
+  {% endif %}
+
+  {% if analyst.variants|length > 1 %}
+    <h3>{{'Did the fix work?' if outcome else 'Where things stand'}}</h3>
+    <div class="table-wrap"><table><tr><th>Version</th><th>Cost per request</th><th>Correct answers</th><th>Output per case</th><th>Against the baseline</th><th></th></tr>
+    {% for v in analyst.variants %}<tr><td><strong>{{v.label}}</strong><br><small class="muted">{{v.name}}</small></td><td>{{v.cost|usd}}</td>
+      <td>{% if v.quality is not none %}{{(v.quality|float * v.cases)|round|int}} / {{v.cases}}{% else %}unknown{% endif %}</td>
+      <td>{{v.output_tokens if v.output_tokens is not none else '?'}} tokens</td>
+      <td>{% if v.status %}{{pill(v.status)}}{% endif %}</td><td class="small"><a href="/artifacts/{{v.id}}">open run</a></td></tr>{% endfor %}
+    {% if not outcome %}<tr><td><strong>Proposed fix</strong></td><td colspan="5" class="muted">{{'Not run yet.' if proposal else 'No proposal.'}}</td></tr>{% endif %}
+    </table></div>
+  {% endif %}
+
+  <details {{'open' if analyst.active or item.state != 'completed'}}><summary><strong>What the analyst did</strong> <span class="muted small">{{analyst.timeline|length}} tool step{{'' if analyst.timeline|length == 1 else 's'}}</span></summary>
+    <p class="muted small">Four read-only tools: read this comparison, inspect a case, propose one prompt, and finish. It cannot run anything itself.</p>
+    <ol class="timeline">
+      {% for step in analyst.timeline %}<li class="{{'error' if step.error}}">{{step.text}}
+        {% if step.error %}<br><small class="answer wrong">Rejected: {{step.error}}</small>{% endif %}
+        {% if step.saw %}<br><small class="muted">{{step.saw}}</small>{% endif %}
+        {% if step.tool not in ['format_reminder', 'finish_investigation'] %}<details><summary class="small muted">raw data</summary><pre>{{step.detail|tojson(indent=2)}}</pre></details>{% endif %}</li>{% endfor %}
+      {% if analyst.active %}<li class="pending">{{'Waiting for the runner…' if item.state == 'queued' else 'Thinking…'}}</li>{% elif not analyst.timeline %}<li class="error">No tool activity recorded.</li>{% endif %}
+    </ol>
+  </details>
+  {% if not analyst.active and settings %}<p><button class="secondary" onclick="askAnalyst()">Ask again</button></p>{% endif %}
+{% endif %}
+</section>

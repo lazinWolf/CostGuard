@@ -1,86 +1,122 @@
-"""Small local interface for the complete experiment-to-report flow."""
+"""The browser interface. Pages are thin: they ask the service for a check and present it."""
 
-import os
+import json
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import db, gateway, real_demo
-from .diagnosis import breakdown, case_rows, describe_limits, mean_output_tokens
+from . import db, gateway, real_demo, service
+from .diagnosis import format_usd, headline, mean_output_tokens, percent
 from .investigation import NUMBER, PROPOSAL_REMINDER, evidence_numbers, unsupported_numbers
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-templates.env.filters["money"] = lambda value: format(Decimal(str(value)), ".8f") if value is not None else "Unknown"
 # Plain numbers for people: "1.0000" -> "1", "0.5000" -> "0.5".
 templates.env.filters["num"] = lambda value: "–" if value is None else format(Decimal(str(value)).normalize(), "f")
-templates.env.filters["usd"] = lambda value: "Unknown" if value is None else (
-    "$" + format(Decimal(str(value)), ",.2f") if abs(Decimal(str(value))) >= 1
-    else "$" + format(Decimal(str(value)).normalize(), "f"))
+templates.env.filters["usd"] = format_usd
+templates.env.filters["percent"] = percent
+
+DEFAULT_QUESTION = ("Explain the cost and quality change, inspect the cases that changed most, "
+                    "and propose a prompt experiment that restores quality at lower cost.")
+
+
+def _page(request: Request, name: str, **context) -> HTMLResponse:
+    return templates.TemplateResponse(request, name, context)
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
-    return templates.TemplateResponse(request, "dashboard.html", {
-        "reports": db.list_comparisons(6), "investigations": db.list_investigations(6),
-        "analyst": db.get_analyst_settings(),
-        "demo_enabled": os.environ.get("COSTGUARD_DEMO") == "1",
-        "suite": real_demo.suite(),
-    })
+def checks_page(request: Request):
+    return _page(request, "checks.html", checks=service.list_checks())
+
+
+@router.get("/checks/new", response_class=HTMLResponse)
+def new_check_page(request: Request):
+    return _page(request, "new_check.html", suite=real_demo.suite(), analyst=db.get_analyst_settings())
+
+
+@router.get("/checks/{report_id}", response_class=HTMLResponse)
+def check_page(request: Request, report_id: str):
+    check = service.get_check(report_id)
+    return _page(request, "check.html", check=check,
+                 stats=headline(check.report, check.breakdown),
+                 analyst=_analyst_view(check), presets=_price_presets(),
+                 prompts={"baseline": check.baseline.configuration.get("system_prompt", ""),
+                          "candidate": check.candidate.configuration.get("system_prompt", "")})
 
 
 @router.get("/connections", response_class=HTMLResponse)
 def connections(request: Request):
-    return templates.TemplateResponse(request, "connections.html", {
-        "gateway": gateway.status(), "analyst": db.get_analyst_settings(),
-    })
+    return _page(request, "connections.html", gateway=gateway.status(), analyst=db.get_analyst_settings())
 
 
-@router.get("/investigations", response_class=HTMLResponse)
-def investigations_page(request: Request, report_id: str | None = None):
-    return templates.TemplateResponse(request, "investigations.html", {
-        "reports": db.list_comparisons(), "selected_report": report_id,
-        "analyst": db.get_analyst_settings(), "investigations": db.list_investigations(),
-    })
+# Earlier versions had separate report and investigation pages; their links still work.
+@router.get("/reports")
+@router.get("/investigations")
+def old_list(report_id: str | None = None):
+    return RedirectResponse(f"/checks/{quote(report_id)}#explain" if report_id else "/")
 
 
-@router.get("/investigations/{investigation_id}", response_class=HTMLResponse)
-def investigation_page(request: Request, investigation_id: str):
+@router.get("/reports/{report_id}")
+def old_report(report_id: str):
+    return RedirectResponse(f"/checks/{quote(report_id)}")
+
+
+@router.get("/investigations/{investigation_id}")
+def old_investigation(investigation_id: str):
     row = db.get_investigation(investigation_id)
     if row is None:
         raise HTTPException(404, "investigation not found")
-    proposal_job = db.get_job(row["proposal_job_id"]) if row["proposal_job_id"] else None
-    original = db.get_comparison(row["report_id"])
+    return RedirectResponse(f"/checks/{quote(row['report_id'])}#explain")
+
+
+def _price_presets() -> list[dict]:
+    """Recorded catalog prices a person can try with one click on the what-if form."""
+    path = service.EXAMPLES / "ci" / "pricing.json"
+    if not path.exists():
+        return []
+    catalog = json.loads(path.read_text())
+    return [{"label": catalog["version"], "input": entry["input_per_million_usd"],
+             "output": entry["output_per_million_usd"]} for entry in catalog["entries"][:1]]
+
+
+def _analyst_view(check: service.Check) -> dict:
+    """Everything the 'Explain and fix' section shows: nothing yet, a live run, or the finished chain."""
+    investigations = check.related["investigations"]
+    view = {"settings": db.get_analyst_settings(), "question": DEFAULT_QUESTION, "investigation": None}
+    if not investigations:
+        view["steps"] = ["current", "", ""]
+        return view
+    row = db.get_investigation(investigations[0]["id"])
     outcome = db.get_comparison(row["proposal_report_id"]) if row["proposal_report_id"] else None
-    baseline = db.get_artifact(original["request"]["baseline_id"])
-    candidate = db.get_artifact(original["request"]["candidate_id"])
-    return templates.TemplateResponse(request, "investigation.html", {
-        "investigation": row, "proposal_job": proposal_job,
-        "timeline": _timeline(row["result"]), "answer": _answer(row),
-        "variants": [_variant("Baseline", baseline, original["report"], "baseline"),
-                     _variant("Candidate", candidate, original["report"], "candidate")]
-                    + ([_variant("Proposal", db.get_artifact(outcome["request"]["candidate_id"]),
-                                 outcome["report"], "candidate")] if outcome else []),
-        "prompts": {"baseline": baseline.configuration.get("system_prompt", ""),
-                    "candidate": candidate.configuration.get("system_prompt", "")},
-    })
+    variants = [_variant("Baseline", check.baseline, check.report, "baseline"),
+                _variant("This version", check.candidate, check.report, "candidate")]
+    if outcome:
+        variants.append(_variant("Proposed fix", db.get_artifact(outcome["request"]["candidate_id"]),
+                                 outcome["report"], "candidate"))
+    proposal = row["result"].get("proposal")
+    view.update(
+        investigation=row, active=row["state"] in {"queued", "running"},
+        answer=_answer(row), timeline=_timeline(row["result"]), proposal=proposal,
+        proposal_job=db.get_job(row["proposal_job_id"]) if row["proposal_job_id"] else None,
+        variants=variants, outcome=variants[2] if outcome else None,
+        steps=["done" if row["state"] == "completed" else "current",
+               "done" if outcome else "current" if proposal and row["state"] == "completed" else "",
+               "done" if outcome else ""])
+    return view
 
 
 def _variant(label: str, artifact, report: dict, side: str) -> dict:
-    """One column of the baseline / candidate / proposal summary."""
+    """One row of the baseline / this version / fix summary."""
     economic = report.get("economic") or {}
-    cost = (economic.get("cost_per_request_usd") or {}).get(side)
-    quality = (economic.get("quality_score") or {}).get(side)
     return {"label": label, "id": str(artifact.artifact_id), "name": artifact.name,
-            "cost": cost, "quality": quality, "cases": len(artifact.cases),
+            "cost": (economic.get("cost_per_request_usd") or {}).get(side),
+            "quality": (economic.get("quality_score") or {}).get(side), "cases": len(artifact.cases),
             "status": report["status"] if side == "candidate" else None,
             "output_tokens": mean_output_tokens(artifact.cases)}
-
-
 
 
 def _answer(row: dict) -> dict | None:
@@ -91,7 +127,7 @@ def _answer(row: dict) -> dict | None:
         return None
     numbers = evidence_numbers([event.get("result") for event in result.get("events", [])
                                 if event.get("tool") in {"inspect_comparison", "inspect_case"}])
-    report = f"/reports/{row['report_id']}"
+    report = f"/checks/{row['report_id']}"
 
     def link(reference: str) -> dict:
         if reference.startswith("case:"):
@@ -99,7 +135,7 @@ def _answer(row: dict) -> dict | None:
             return {"label": f"case {case_id}", "href": f"{report}#case-{quote(case_id)}"}
         if reference == "proposal":
             return {"label": "proposal", "href": "#proposal"}
-        return {"label": "report" if reference == "comparison" else reference, "href": report}
+        return {"label": "check" if reference == "comparison" else reference, "href": report}
 
     return {"summary": conclusion["summary"],
             "summary_unsupported": unsupported_numbers(conclusion["summary"], numbers),
@@ -172,34 +208,7 @@ def job_page(request: Request, job_id: str):
     job = db.get_job(job_id)
     if job is None:
         raise HTTPException(404, "job not found")
-    return templates.TemplateResponse(request, "job.html", {"job": job})
-
-
-@router.get("/reports", response_class=HTMLResponse)
-def reports(request: Request):
-    return templates.TemplateResponse(request, "reports.html", {
-        "reports": db.list_comparisons(),
-    })
-
-
-@router.get("/reports/{report_id}", response_class=HTMLResponse)
-def report_page(request: Request, report_id: str):
-    report = db.get_comparison(report_id)
-    if report is None:
-        raise HTTPException(404, "report not found")
-    baseline = db.get_artifact(report["request"]["baseline_id"])
-    candidate = db.get_artifact(report["request"]["candidate_id"])
-    source = db.source_experiment(str(candidate.artifact_id)) or db.source_experiment(str(baseline.artifact_id))
-    inputs = {case.case_id: case for case in source.cases} if source else {}
-    return templates.TemplateResponse(request, "report.html", {
-        "saved": report, "cases": case_rows(report["report"], baseline, candidate, inputs),
-        "baseline": baseline, "candidate": candidate,
-        "breakdown": breakdown(report["request"]["pricing"], baseline, candidate),
-        "limits": describe_limits(report["request"].get("policy")),
-        "related": db.related_investigations(report_id),
-    })
-
-
+    return _page(request, "job.html", job=job)
 
 
 @router.get("/artifacts/{artifact_id}", response_class=HTMLResponse)
@@ -207,4 +216,4 @@ def artifact_page(request: Request, artifact_id: str):
     artifact = db.get_artifact(artifact_id)
     if artifact is None:
         raise HTTPException(404, "artifact not found")
-    return templates.TemplateResponse(request, "artifact.html", {"artifact": artifact})
+    return _page(request, "artifact.html", artifact=artifact)

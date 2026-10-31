@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}New check · CostGuard{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <h1>New check</h1>
+  <p class="muted">{{suite.description}} {{suite.cases|length}} support messages × 2 prompts, scored by a <code>{{suite.evaluator}}</code> label match.</p>
+</div></div>
+
+<form class="card" id="new-check">
+  <div class="grid">
+    <div><label for="model">Model (provider/model)</label>
+      <input id="model" list="models" required placeholder="ollama/llama3.2:3b-instruct-q4_K_M"><datalist id="models"></datalist>
+      <p id="gateway-note" class="muted small">Checking the gateway…</p></div>
+    <div><label for="input-price">Input USD / million tokens</label><input id="input-price" type="number" min="0" step="any" required value="{{suite.reference_pricing.input_per_million_usd}}"></div>
+    <div><label for="output-price">Output USD / million tokens</label><input id="output-price" type="number" min="0" step="any" required value="{{suite.reference_pricing.output_per_million_usd}}"></div>
+  </div>
+  <p class="muted small">The prices are notional reference rates, so a free local model still shows a cost difference. Enter your provider's real prices for a cloud model.</p>
+  <label class="row"><input id="use-as-analyst" type="checkbox" {{'' if analyst else 'checked'}} style="width:auto"> Also use this model as the analyst that explains a failing check (it needs tool-calling support){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% endif %}</label>
+  <p class="row"><button id="start" type="submit">Run the check</button>
+    <span class="small muted">Calls the model {{suite.cases|length * 2}} times and may incur provider charges. A local model on CPU can take several minutes.</span></p>
+  <p id="message" class="notice warn" hidden></p>
+</form>
+
+<section class="card" id="live" hidden><h2>Running</h2>
+  <p class="muted small">Each message goes to the model with the baseline prompt, then with the candidate prompt. When both finish, CostGuard compares them and opens the check.</p>
+  <div class="prompts"><div><h3>Baseline <span id="live-baseline-count" class="muted small"></span></h3><div id="live-baseline"></div></div>
+  <div><h3>Candidate <span id="live-candidate-count" class="muted small"></span></h3><div id="live-candidate"></div></div></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function waitJob(id, label, report, limitSeconds){
+  for(let waited=0; waited<limitSeconds; waited+=2){
+    const job=await api('jobs/'+id);
+    showLive(label.toLowerCase(), job);
+    if(job.state==='completed')return job.artifact_id;
+    if(!['queued','running'].includes(job.state))throw Error(label+' run '+job.state+(job.error?': '+job.error:''));
+    report(label+' run: '+job.state+' · '+job.progress+' / '+job.total+' cases');
+    await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+  throw Error(label+' run is still pending. Follow it from the job page, then compare.');
+}
+function showLive(side, job){
+  document.getElementById('live').hidden=false;
+  const rows=job.cases||[]; const correct=rows.filter(c=>c.quality===1).length;
+  const tokens=rows.reduce((sum,c)=>sum+(c.output_tokens||0),0);
+  document.getElementById('live-'+side+'-count').textContent=`${rows.length}/${job.total} · ${correct} correct · ${tokens} output tokens`;
+  document.getElementById('live-'+side).innerHTML=rows.map(c=>`<p class="small"><span class="answer ${c.quality===1?'right':'wrong'}">${c.quality===1?'✓':'✗'}</span> <strong>${escapeHtml(c.case_id)}</strong> → <span class="answer">${escapeHtml((c.output||c.error||'').slice(0,70))}${(c.output||'').length>70?'…':''}</span> <span class="muted">(${c.output_tokens??'?'} tokens)</span></p>`).join('')||'<p class="muted small">waiting…</p>';
+}
+(async()=>{
+  const note=document.getElementById('gateway-note');const input=document.getElementById('model');
+  try{const gateway=await api('gateway');const list=document.getElementById('models');
+    gateway.models.forEach(id=>{const option=document.createElement('option');option.value=id;list.appendChild(option);});
+    if(gateway.status!=='connected'){note.textContent='Gateway unavailable. Start Compose with --profile local or --profile gateway.';return;}
+    const preferred=gateway.models.find(id=>id.startsWith('ollama/llama3.2'))||gateway.models.find(id=>id.startsWith('ollama/'))||gateway.models.find(id=>!id.startsWith('costguard-mock/'));
+    if(preferred&&!input.value)input.value=preferred;
+    note.textContent=gateway.models.length+' model IDs available from the gateway.';
+  }catch(error){note.textContent='Unable to reach the gateway status endpoint.';}
+})();
+document.getElementById('new-check').addEventListener('submit',event=>{
+  event.preventDefault();
+  const status=text=>{const m=document.getElementById('message');m.hidden=false;m.textContent=text;};
+  busy(async()=>{
+    status('Queuing runs…');
+    const demo=await api('demo/real',{model:document.getElementById('model').value.trim(),input_per_million_usd:document.getElementById('input-price').value,output_per_million_usd:document.getElementById('output-price').value,configure_analyst:document.getElementById('use-as-analyst').checked});
+    const baseline=await waitJob(demo.baseline_job_id,'Baseline',status,3600);
+    const candidate=await waitJob(demo.candidate_job_id,'Candidate',status,3600);
+    status('Saving comparison…');
+    const saved=await api('comparisons',{baseline_id:baseline,candidate_id:candidate,pricing:demo.pricing,policy:demo.policy,monthly_requests:demo.monthly_requests||100000});
+    location.href='/checks/'+saved.id;
+  });
+});
+</script>
+{% endblock %}

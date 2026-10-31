@@ -5,6 +5,7 @@ read from here, so one fact is worded one way everywhere.
 """
 
 from decimal import Decimal
+from typing import Callable, NamedTuple
 
 
 def breakdown(pricing: dict, baseline, candidate) -> dict | None:
@@ -75,31 +76,122 @@ def explain(driver: dict | None, baseline, candidate) -> list[str]:
     return sentences
 
 
-LIMITS = {
-    "max_cost_increase_percent": "cost per request may rise by at most {}%",
-    "max_candidate_cost_per_request_usd": "cost per request at most ${}",
-    "max_monthly_cost_usd": "projected monthly cost at most ${}",
-    "min_candidate_quality_score": "at least {pct}% of answers correct",
-    "max_quality_drop": "correct answers may fall at most {pct} percentage points below the baseline",
-    "max_candidate_mean_latency_ms": "mean latency at most {} ms",
-    "max_candidate_model_calls_per_case": "at most {} model calls per case",
-    "max_candidate_retries_per_case": "at most {} retries per case",
-    "max_candidate_tool_steps_per_case": "at most {} tool steps per case",
-    "max_candidate_agent_steps_per_case": "at most {} agent steps per case",
+def format_usd(value) -> str:
+    """Money for people: cents at a dollar or more, otherwise every significant digit."""
+    if value is None:
+        return "Unknown"
+    amount = Decimal(str(value))
+    return "$" + (format(amount, ",.2f") if abs(amount) >= 1 else format(amount.normalize(), "f"))
+
+
+def _number(value) -> str:
+    return format(Decimal(str(value)).normalize(), "f")
+
+
+def percent(value) -> str:
+    amount = Decimal(str(value))
+    return "0%" if amount == 0 else f"{amount:+,.2f}%"
+
+
+class Limit(NamedTuple):
+    """One policy limit: how it reads, what the report measured, and when it is broken."""
+    text: str                                  # {} is the limit, {pct} the limit as a percentage
+    measure: Callable[[dict], Decimal | None]  # None when the report cannot say
+    show: Callable[[dict, Decimal], str]
+    broken: Callable[[Decimal, Decimal], bool] = lambda measured, limit: measured > limit
+
+
+def _dig(report: dict, *path):
+    for key in path:
+        report = (report or {}).get(key)
+    return None if report is None else Decimal(str(report))
+
+
+def _quality_scores(report: dict) -> tuple[Decimal, Decimal] | None:
+    """Baseline and candidate score, only when every case was scored on both sides."""
+    economic = report.get("economic") or {}
+    scores = economic.get("quality_score")
+    if not scores or economic.get("quality_cases_compared") != report.get("baseline_case_count"):
+        return None
+    return Decimal(str(scores["baseline"])), Decimal(str(scores["candidate"]))
+
+
+def _correct(report: dict, score: Decimal) -> str:
+    return f"{round(score * report['baseline_case_count'])}/{report['baseline_case_count']} correct"
+
+
+def _quality_drop(report: dict) -> Decimal | None:
+    scores = _quality_scores(report)
+    return None if scores is None else scores[0] - scores[1]
+
+
+def _candidate_quality(report: dict) -> Decimal | None:
+    scores = _quality_scores(report)
+    return None if scores is None else scores[1]
+
+
+LIMITS: dict[str, Limit] = {
+    "max_cost_increase_percent": Limit(
+        "cost per request may rise by at most {}%",
+        lambda r: _dig(r, "economic", "cost_per_request_usd", "delta_percent"),
+        lambda r, v: percent(v)),
+    "max_candidate_cost_per_request_usd": Limit(
+        "cost per request at most ${}",
+        lambda r: _dig(r, "economic", "cost_per_request_usd", "candidate"),
+        lambda r, v: format_usd(v)),
+    "max_monthly_cost_usd": Limit(
+        "projected monthly cost at most ${}",
+        lambda r: _dig(r, "economic", "monthly_projection", "cost_usd", "candidate"),
+        lambda r, v: format_usd(v)),
+    "min_candidate_quality_score": Limit(
+        "at least {pct}% of answers correct", _candidate_quality,
+        lambda r, v: _correct(r, v), lambda measured, limit: measured < limit),
+    "max_quality_drop": Limit(
+        "correct answers may fall at most {pct} percentage points below the baseline", _quality_drop,
+        lambda r, v: f"{_correct(r, _quality_scores(r)[0])} → {_correct(r, _quality_scores(r)[1])}"),
+    "max_candidate_mean_latency_ms": Limit(
+        "mean latency at most {} ms", lambda r: _dig(r, "economic", "mean_latency_ms", "candidate"),
+        lambda r, v: f"{v:,.0f} ms"),
+    "max_candidate_model_calls_per_case": Limit(
+        "at most {} model calls per case", lambda r: _dig(r, "model_calls", "candidate"),
+        lambda r, v: _number(v)),
+    "max_candidate_retries_per_case": Limit(
+        "at most {} retries per case", lambda r: _dig(r, "retries", "candidate"),
+        lambda r, v: _number(v)),
+    "max_candidate_tool_steps_per_case": Limit(
+        "at most {} tool steps per case", lambda r: _dig(r, "tool_steps", "candidate"),
+        lambda r, v: _number(v)),
+    "max_candidate_agent_steps_per_case": Limit(
+        "at most {} agent steps per case", lambda r: _dig(r, "agent_steps", "candidate"),
+        lambda r, v: _number(v)),
 }
 
 
+def limit_text(key: str, value) -> str:
+    number = Decimal(str(value)).normalize()
+    if key == "max_quality_drop" and number == 0:
+        return "no fewer correct answers than the baseline"
+    return LIMITS[key].text.format(format(number, "f"), pct=format((number * 100).normalize(), "f"))
+
+
 def describe_limits(policy: dict | None) -> list[str]:
-    result = []
-    for key, value in (policy or {}).items():
-        if value is None or key not in LIMITS:
+    """The limits that were set, in plain words."""
+    return [limit_text(key, value) for key, value in (policy or {}).items()
+            if value is not None and key in LIMITS]
+
+
+def limit_rows(report: dict, policy: dict | None) -> list[dict]:
+    """Each limit that was set beside what was measured: status is pass, fail or unknown."""
+    rows = []
+    for key, limit in LIMITS.items():  # A fixed order: cost first, then quality, then behavior.
+        value = (policy or {}).get(key)
+        if value is None:
             continue
-        number = Decimal(str(value)).normalize()
-        if key == "max_quality_drop" and number == 0:
-            result.append("no fewer correct answers than the baseline")
-            continue
-        result.append(LIMITS[key].format(format(number, "f"), pct=format((number * 100).normalize(), "f")))
-    return result
+        measured = limit.measure(report)
+        status = "unknown" if measured is None else "fail" if limit.broken(measured, Decimal(str(value))) else "pass"
+        rows.append({"key": key, "limit": limit_text(key, value), "status": status,
+                     "measured": "not measured" if measured is None else limit.show(report, measured)})
+    return rows
 
 
 def case_rows(report: dict, baseline, candidate, inputs: dict | None = None) -> list[dict]:
@@ -115,3 +207,41 @@ def case_rows(report: dict, baseline, candidate, inputs: dict | None = None) -> 
              "before_tokens": output_tokens(left.get(case_id)),
              "after_tokens": output_tokens(right.get(case_id)),
              "input": (inputs or {}).get(case_id)} for case_id in order]
+
+
+def correct_answers(baseline, candidate, cases: int | None) -> str | None:
+    """'6/8 → 0/8 correct', or None when no quality scores were compared."""
+    if baseline is None or candidate is None or not cases:
+        return None
+    return f"{round(Decimal(str(baseline)) * cases)}/{cases} → {round(Decimal(str(candidate)) * cases)}/{cases} correct"
+
+
+def _tone(change, worse_when: str) -> str:
+    """Whether a change is good or bad news, for colouring: flat when nothing moved."""
+    if change is None or Decimal(str(change)) == 0:
+        return "flat"
+    rising = Decimal(str(change)) > 0
+    return "bad" if rising == (worse_when == "up") else "good"
+
+
+def headline(report: dict, breakdown_: dict | None) -> list[dict]:
+    """The numbers a reader sees first: what it costs, how many answers are right, and the output behind both."""
+    economic = report.get("economic")
+    if not economic:
+        return []
+    projection = economic.get("monthly_projection")
+    money = projection["cost_usd"] if projection else economic["cost_per_request_usd"]
+    stats = [{"label": f"Cost per month at {projection['requests']:,} requests" if projection else "Cost per request",
+              "value": format_usd(money["candidate"]), "was": f"was {format_usd(money['baseline'])}",
+              "change": None if money["delta_percent"] is None else percent(money["delta_percent"]),
+              "tone": _tone(money["delta_percent"], "up")}]
+    scores, cases = _quality_scores(report), report.get("baseline_case_count")
+    if scores:
+        before, after = (round(score * cases) for score in scores)
+        stats.append({"label": "Correct answers", "value": f"{after} / {cases}", "was": f"was {before} / {cases}",
+                      "change": None, "tone": _tone(after - before, "down")})
+    output = next((row for row in (breakdown_ or {}).get("rows", []) if row["kind"] == "output"), None)
+    if output:
+        stats.append({"label": "Output per case", "value": f"{output['tokens_after']} tokens",
+                      "was": f"was {output['tokens_before']}", "change": None, "tone": "flat"})
+    return stats

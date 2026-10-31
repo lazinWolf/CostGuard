@@ -1,0 +1,16 @@
+{# Small pieces shared by several pages. #}
+
+{% macro pill(status) %}<span class="pill {{status}}">{{status|replace('_', ' ')}}</span>{% endmacro %}
+
+{# A percentage change from a report metric, coloured by direction. #}
+{% macro change(metric) %}{% if metric is none or metric.delta_percent is none %}<span class="muted">n/a</span>{% else %}{% set value = metric.delta_percent|float %}<span class="delta {{'up' if value > 0 else 'down' if value < 0 else ''}}">{{'+' if value > 0 else ''}}{{metric.delta_percent|num}}%</span>{% endif %}{% endmacro %}
+
+{# One model answer from a case, marked right or wrong when it was scored. #}
+{% macro answer(case) %}{% if case is none %}<span class="muted">–</span>{% elif case.status != 'ok' %}{{pill(case.status)}} <small class="muted">{{case.error}}</small>{% else %}{% set right = case.quality_score is not none and case.quality_score|float >= 1 %}{% set text = case.output or '' %}
+  <span class="answer {{'right' if right else 'wrong' if case.quality_score is not none else ''}}">{{'✓' if right else '✗' if case.quality_score is not none else ''}} {{text[:90]}}{{'…' if text|length > 90}}</span>
+  {% if not text and case.reasoning %}<br><small class="answer wrong">No answer: the model used its whole output budget reasoning.</small>{% endif %}
+  {% if text|length > 90 %}<details><summary class="small">full answer ({{text|length}} chars)</summary><div class="output">{{text}}</div></details>{% endif %}
+  {% if case.reasoning %}<details><summary class="small">+ hidden reasoning ({{case.reasoning|length}} chars, billed)</summary><div class="output">{{case.reasoning}}</div></details>{% endif %}{% endif %}{% endmacro %}
+
+{# A warning for numbers an analyst quoted that its evidence does not contain. #}
+{% macro unsupported(numbers) %}{% if numbers %}<span class="check warn" title="CostGuard could not find these numbers in the evidence the analyst inspected. They may be derived or mistaken; check them on the check page.">⚠ not in the evidence: {{numbers|join(', ')}}</span>{% endif %}{% endmacro %}

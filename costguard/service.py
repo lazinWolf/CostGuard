@@ -9,13 +9,14 @@ Failures are domain errors; each surface maps them to its own idiom (HTTP status
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
-from . import db, events
+from . import db, diagnosis, events
 from .economics import compare_artifacts, reprice
-from .execution import ExperimentSpec
+from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings
 from .models import ComparisonPolicy, PricingCatalog
 
@@ -108,3 +109,61 @@ def start_mock_demo() -> dict:
     return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
             "pricing": specs[0].pricing.model_dump(mode="json"),
             "policy": {"max_cost_increase_percent": 10, "min_candidate_quality_score": 1}}
+
+
+def list_checks(limit: int | None = None) -> list[dict]:
+    """Checks, newest first. Every fix measured for a check is nested under the original check."""
+    rows = {row["id"]: row for row in db.list_comparisons(limit)}
+    parents = db.fix_parents()
+    checks: list[dict] = []
+    for row in rows.values():
+        row["correct"] = diagnosis.correct_answers(row["quality_baseline"], row["quality_candidate"],
+                                                   row["quality_cases"])
+        row["fixes"] = []
+    for row in rows.values():
+        root = row
+        while parents.get(root["id"]) in rows:
+            root = rows[parents[root["id"]]]
+        if root is row:
+            checks.append(row)
+        else:
+            root["fixes"].insert(0, row)  # Newest first while iterating, so this reads oldest first.
+    return checks
+
+
+@dataclass
+class Check:
+    """A saved comparison with everything a person needs to read it."""
+    id: str
+    saved: dict
+    baseline: ExecutionArtifact
+    candidate: ExecutionArtifact
+    limits: list[dict]
+    breakdown: dict | None
+    cases: list[dict]
+    related: dict
+
+    @property
+    def report(self) -> dict:
+        return self.saved["report"]
+
+    @property
+    def request(self) -> dict:
+        return self.saved["request"]
+
+
+def get_check(report_id: str) -> Check:
+    saved = db.get_comparison(report_id)
+    if saved is None:
+        raise NotFound("report not found")
+    baseline = db.get_artifact(saved["request"]["baseline_id"])
+    candidate = db.get_artifact(saved["request"]["candidate_id"])
+    source = db.source_experiment(str(candidate.artifact_id)) or db.source_experiment(str(baseline.artifact_id))
+    inputs = {case.case_id: case for case in source.cases} if source else {}
+    return Check(
+        id=report_id, saved=saved, baseline=baseline, candidate=candidate,
+        limits=diagnosis.limit_rows(saved["report"], saved["request"].get("policy")),
+        breakdown=diagnosis.breakdown(saved["request"]["pricing"], baseline, candidate),
+        cases=diagnosis.case_rows(saved["report"], baseline, candidate, inputs),
+        related=db.related_investigations(report_id),
+    )

@@ -196,12 +196,16 @@ def run(stale_id):
         assert request(client, "GET", f"/api/v1/artifacts/{triage_ids[1]}")["cases"][0]["output"]
         assert client.post("/api/v1/jobs", json=baseline,
                            headers={"Origin": "http://evil.example"}).status_code == 403
-        for page in ("/", "/connections", "/reports",
-                     f"/reports/{saved['id']}", f"/reports/{triage_report['id']}", f"/artifacts/{baseline_id}",
-                     "/investigations", f"/investigations/{investigation_id}"):
+        for page in ("/", "/checks/new", "/connections", f"/checks/{saved['id']}",
+                     f"/checks/{triage_report['id']}", f"/artifacts/{baseline_id}", "/static/app.css"):
             response = client.get(page)
             response.raise_for_status()
-            assert "<html" in response.text.lower(), page
+            assert "<html" in response.text.lower() or page.startswith("/static"), page
+        # Earlier page addresses still lead to the check they belonged to.
+        for old, new in (("/reports", "/"), (f"/reports/{saved['id']}", f"/checks/{saved['id']}"),
+                         (f"/investigations/{investigation_id}", f"/checks/{saved['id']}#explain")):
+            response = client.get(old)
+            assert response.status_code in {302, 307} and response.headers["location"] == new, (old, response)
 
     asyncio.run(check_mcp(saved["id"]))
 

@@ -321,7 +321,7 @@ class NumberCheckTests(unittest.TestCase):
         answer = _answer(row)
         self.assertEqual(answer["summary_unsupported"], [])
         self.assertEqual(answer["findings"][0]["links"], [
-            {"label": "case refund", "href": "/reports/r1#case-refund"}, {"label": "report", "href": "/reports/r1"}])
+            {"label": "case refund", "href": "/checks/r1#case-refund"}, {"label": "check", "href": "/checks/r1"}])
         self.assertEqual(answer["findings"][0]["unsupported"], [])
         self.assertEqual(answer["findings"][1]["unsupported"], ["138.14%"])
         self.assertTrue(answer["findings"][0]["quotes_numbers"])

@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% from "_macros.html" import pill %}
+{% block title %}Checks · CostGuard{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <h1>Checks</h1>
+  <p class="muted">Does a change to a prompt, model or tool path stay within your cost and quality limits? Each check runs both versions on the same cases and applies your limits.</p>
+</div><a class="button" href="/checks/new">New check</a></div>
+
+{% macro row(check, nested=false) %}
+  <tr {% if nested %}class="nested"{% endif %}>
+    <td><a href="/checks/{{check.id}}"><strong>{{check.candidate_name}}</strong></a><br><small class="muted">vs {{check.baseline_name}} · {{check.model or ''}}</small></td>
+    <td>{{pill(check.status)}}</td>
+    <td>{% if check.cost_change is not none %}<span class="change {{'bad' if check.cost_change|float > 0 else 'good' if check.cost_change|float < 0}}">{{check.cost_change|percent}}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+    <td>{{check.correct or '–'}}</td>
+    <td class="small muted">{{check.created_at[:16]|replace('T', ' ')}}</td>
+  </tr>
+{% endmacro %}
+
+{% if checks %}
+<section class="card"><div class="table-wrap"><table>
+  <tr><th>Check</th><th>Verdict</th><th>Cost per request</th><th>Answers</th><th>When</th></tr>
+  {% for check in checks %}{{row(check)}}{% for fix in check.fixes %}{{row(fix, true)}}{% endfor %}{% endfor %}
+</table></div></section>
+{% else %}
+<section class="card empty"><h2>No checks yet</h2>
+  <p>Start one to see a verdict, the cost drivers and what an analyst would change.</p>
+  <p><a class="button" href="/checks/new">Run the demo check</a></p></section>
+{% endif %}
+
+<section class="card"><h2>The same gate in CI</h2>
+  <p class="lede">A pull request that changes a prompt can be blocked before it ships. The command exits 0 for pass, 1 for fail and 2 when the evidence is inconclusive.</p>
+  <pre>python -m costguard gate --baseline baseline.json --candidate candidate.json \
+  --pricing pricing.json --policy policy.json</pre>
+</section>
+{% endblock %}

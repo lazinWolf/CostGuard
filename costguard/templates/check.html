@@ -1,0 +1,138 @@
+{% extends "base.html" %}{% from "_macros.html" import pill, change, answer %}
+{% set r = check.report %}{% set req = check.request %}{% set e = r.economic %}{% set source = check.related.source %}
+{% block title %}{{check.candidate.name}} · CostGuard{% endblock %}
+{% block content %}
+{% set subject = 'The proposed fix' if source else 'This version' %}
+{% set broken = check.limits|selectattr('status', 'equalto', 'fail')|list|length %}
+
+<div class="page-head"><div>
+  <h1>{{check.candidate.name}} <span class="muted" style="font-weight:400">vs</span> {{check.baseline.name}}</h1>
+  <p class="muted small">{{check.baseline.cases|length}} cases · {{check.candidate.configuration.get('provider', '?')}}/{{check.candidate.configuration.get('model', '?')}} · prices <code>{{req.pricing.version}}</code> · check <code>{{check.id[:8]}}</code></p>
+</div></div>
+
+{% if source %}<div class="notice">This check measures a <strong>fix proposed by the analyst</strong> for <a href="/checks/{{source.report_id}}#explain">an earlier check</a>, against the original baseline.</div>{% endif %}
+
+<ol class="stepper">
+  <li class="done">Run both versions</li>
+  <li class="done">Verdict</li>
+  <li class="{{analyst.steps[0]}}"><a href="#explain">Explain</a></li>
+  <li class="{{analyst.steps[1]}}"><a href="#explain">Fix</a></li>
+</ol>
+
+<section class="verdict {{r.status}}">
+  <div class="word">{{r.status|replace('_', ' ')}}</div>
+  <p>{% if r.status == 'pass' %}{{subject}} stays within every limit you set, so CostGuard would let it ship.
+  {% elif r.status == 'fail' %}{{subject}} breaks {{broken}} of {{check.limits|length}} limits, so CostGuard would block it.
+  {% elif r.status == 'inconclusive' %}CostGuard won't pass or fail this change because the evidence is incomplete.
+  {% else %}No limits were set, so these numbers are informational.{% endif %}</p>
+  {% if check.limits %}<table class="limits">{% for row in check.limits %}
+    <tr class="{{row.status}}"><td>{{'✓' if row.status == 'pass' else '✗' if row.status == 'fail' else '?'}}</td><td>{{row.limit}}</td><td class="measured">{{row.measured}}</td></tr>{% endfor %}</table>{% endif %}
+  {% if r.status == 'inconclusive' %}<ul>{% for reason in (r.reasons + r.policy.unknowns)|unique %}<li>{{reason}}</li>{% endfor %}</ul>{% endif %}
+</section>
+
+{% if stats %}<div class="stats">{% for stat in stats %}
+  <div class="stat"><div class="label">{{stat.label}}</div><div class="value">{{stat.value}}</div>
+    <div class="was">{{stat.was}}{% if stat.change %} · <span class="change {{stat.tone}}">{{stat.change}}</span>{% endif %}</div></div>{% endfor %}</div>{% endif %}
+
+<section class="card"><h2>What changed</h2>
+  {% set before = prompts.baseline %}{% set after = prompts.candidate %}
+  {% if before != after %}<p class="muted small">System prompt, word by word: <del>removed</del> · <ins>added</ins>. Same cases, same model, same prices.</p>
+  <div class="prompts"><div><h3>Baseline · {{before.split()|length}} words</h3><div class="prompt" id="prompt-before" data-diff-left="prompt-after">{{before}}</div></div>
+  <div><h3>{{'Proposed fix' if source else 'Candidate'}} · {{after.split()|length}} words</h3><div class="prompt" id="prompt-after">{{after}}</div></div></div>
+  {% elif source and check.baseline.configuration.get('model') == check.candidate.configuration.get('model') %}<p>The proposed prompt is identical to the baseline prompt: this fix reverts the change. Same cases, same model, same prices.</p>
+  {% else %}<p>Both runs use the same system prompt{% if check.baseline.configuration.get('model') != check.candidate.configuration.get('model') %}, but different models: {{check.baseline.configuration.get('model')}} → {{check.candidate.configuration.get('model')}}{% endif %}. Differences below come from run-to-run model behavior.</p>{% endif %}
+</section>
+
+{% if check.breakdown and not check.breakdown.driver %}<section class="card"><h2>Why the cost is the same</h2><p class="explain">Token usage and cost per case are the same on both sides.</p></section>
+{% elif check.breakdown %}<section class="card"><h2>Why the cost changed</h2>
+  {% if check.breakdown.explanation %}<p class="explain">{{check.breakdown.explanation|join(' ')}}</p>{% endif %}
+  <div class="table-wrap"><table><tr><th>Per case, on average</th><th>Baseline</th><th>{{'Fix' if source else 'Candidate'}}</th><th>Cost change</th><th>Share of change</th></tr>
+  {% for row in check.breakdown.rows %}<tr><td>{{row.kind|capitalize}} tokens</td><td>{{row.tokens_before}} <small class="muted">({{row.cost_before|usd}})</small></td><td>{{row.tokens_after}} <small class="muted">({{row.cost_after|usd}})</small></td>
+    <td>{{'+' if row.cost_delta > 0}}{{row.cost_delta|usd}}</td><td><div class="row"><div class="bar"><span style="width: {{row.share}}%"></span></div> {{row.share}}%</div></td></tr>{% endfor %}</table></div>
+  <p class="muted small">Cost = tokens × price. Prices used: {% for price in check.breakdown.prices %}{{price.model}} at ${{price.input|num}} input / ${{price.output|num}} output per million tokens{% endfor %}.</p>
+</section>{% endif %}
+
+{% include "_analyst.html" %}
+
+{% if check.cases %}<section class="card"><h2>Case by case</h2>
+  <p class="muted small">Each case was sent with both versions. ✓ means the answer matched the expected one. Largest cost increase first.</p>
+  {% set fold = check.cases|length > 6 %}
+  <div class="table-wrap"><table>
+  <tr><th>Case</th><th>Expected</th><th>Baseline answer</th><th>{{'Fix' if source else 'Candidate'}} answer</th><th>Output tokens</th><th>Cost</th></tr>
+  {% for row in check.cases %}<tr id="case-{{row.case_id}}" {% if fold and loop.index > 4 %}class="more" hidden{% endif %}>
+    <td><strong>{{row.case_id}}</strong>{% if row.input %}<br><small class="muted">{{row.input.prompt[:120]}}</small>{% endif %}</td>
+    <td>{% if row.input and row.input.expected_text %}<span class="answer">{{row.input.expected_text}}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+    <td>{{answer(row.before)}}</td><td>{{answer(row.after)}}</td>
+    <td>{{row.before_tokens if row.before_tokens is not none else '?'}} → <strong>{{row.after_tokens if row.after_tokens is not none else '?'}}</strong></td>
+    <td>{% if row.cost %}{{row.cost.baseline|usd}} → <strong>{{row.cost.candidate|usd}}</strong><br>{{change(row.cost)}}{% else %}<span class="muted">not comparable</span>{% endif %}</td>
+  </tr>{% endfor %}
+  </table></div>
+  {% if fold %}<p><button type="button" class="secondary" id="show-all">Show all {{check.cases|length}} cases</button></p>{% endif %}
+</section>{% endif %}
+
+{% if e %}<section class="card whatif"><h2>What if prices change?</h2>
+  <p class="muted small">Reprices the tokens both runs actually used. Behavior, quality and latency are held fixed: this does not predict how a different model would behave.</p>
+  <div class="grid">{% for entry in req.pricing.entries %}
+    <div><label for="wi-in-{{loop.index0}}">{{entry.provider}}/{{entry.model}}<br><span class="muted small">input USD / million tokens</span></label><input id="wi-in-{{loop.index0}}" type="number" min="0" step="any" value="{{entry.input_per_million_usd|num}}"></div>
+    <div><label for="wi-out-{{loop.index0}}"><br><span class="muted small">output USD / million tokens</span></label><input id="wi-out-{{loop.index0}}" type="number" min="0" step="any" value="{{entry.output_per_million_usd|num}}"></div>{% endfor %}
+    <div><label for="wi-requests">Requests per month</label><input id="wi-requests" type="number" min="0" step="1" value="{{e.monthly_projection.requests if e.monthly_projection else 100000}}"></div>
+    <div><button type="button" id="wi-run" onclick="whatIf()">Recalculate</button></div>
+  </div>
+  {% if req.pricing.entries|length == 1 %}{% for preset in presets %}<p class="small">Try: <button type="button" class="secondary" onclick="usePreset({{preset.input|tojson}}, {{preset.output|tojson}})">{{preset.label}} · ${{preset.input|num}} / ${{preset.output|num}}</button></p>{% endfor %}{% endif %}
+  <div id="wi-result" class="table-wrap"></div>
+</section>{% endif %}
+
+<details class="card"><summary><strong>Execution details</strong> <span class="muted small">latency, calls, retries, steps</span></summary>
+  {% if e %}<p>Mean latency {{'{:,.0f}'.format(e.mean_latency_ms.baseline|float)}} → {{'{:,.0f}'.format(e.mean_latency_ms.candidate|float)}} ms · p95 {{('{:,.0f}'.format(r.p95_latency_ms.candidate|float) ~ ' ms') if r.p95_latency_ms else 'unknown'}}. <span class="muted small">The first call to a local model can include loading it, which inflates the baseline's latency.</span></p>{% endif %}
+  <p>Per case: model calls {{r.model_calls.baseline|num}} → {{r.model_calls.candidate|num}} · retries {{r.retries.baseline|num}} → {{r.retries.candidate|num}} · tool steps {{r.tool_steps.baseline|num}} → {{r.tool_steps.candidate|num}} · agent steps {{r.agent_steps.baseline|num}} → {{r.agent_steps.candidate|num}}</p>
+  {% if e %}<p class="muted small">Assumptions: {{e.assumptions|join(' ')}}</p>{% endif %}
+  <p><a href="/artifacts/{{r.baseline_id}}">Baseline run</a> · <a href="/artifacts/{{r.candidate_id}}">{{'Fix' if source else 'Candidate'}} run</a> · <a href="/api/v1/comparisons/{{check.id}}">JSON report</a></p>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const reportPricing={{req.pricing|tojson}}, runs={{[r.baseline_id, r.candidate_id]|tojson}};
+const usd=v=>{const n=Number(v);return n>=1?'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'$'+Number(n.toPrecision(3)).toString();};
+function usePreset(input,output){document.getElementById('wi-in-0').value=input;document.getElementById('wi-out-0').value=output;whatIf();}
+async function whatIf(){
+  const out=document.getElementById('wi-result');const button=document.getElementById('wi-run');button.disabled=true;
+  try{
+    const entries=reportPricing.entries.map((entry,i)=>({...entry,
+      input_per_million_usd:document.getElementById('wi-in-'+i).value,output_per_million_usd:document.getElementById('wi-out-'+i).value}));
+    const requests=Number(document.getElementById('wi-requests').value);
+    const body=id=>({artifact_id:id,monthly_requests:requests,pricing:{version:'what-if',source:'Entered on the check page',entries}});
+    const [before,after]=await Promise.all(runs.map(async id=>{const d=await api('scenarios',body(id));
+      if(d.status!=='hypothetical')throw Error('Cannot reprice: '+d.reason);return d;}));
+    const b=Number(before.cost_per_request_usd.candidate), c=Number(after.cost_per_request_usd.candidate);
+    const mb=Number(before.monthly_cost_usd.candidate), mc=Number(after.monthly_cost_usd.candidate);
+    const change=b?((c-b)/b*100).toFixed(1)+'%':'n/a';
+    out.innerHTML=`<table><tr><th>At these prices</th><th>Baseline</th><th>{{'Fix' if source else 'Candidate'}}</th><th>Difference</th></tr>
+      <tr><td>Per request</td><td>${usd(b)}</td><td>${usd(c)}</td><td>${c>=b?'+':''}${change}</td></tr>
+      <tr><td>Per month (${requests.toLocaleString('en-US')} requests)</td><td>${usd(mb)}</td><td>${usd(mc)}</td><td><strong>${mc>=mb?'+':'−'}${usd(Math.abs(mc-mb))}</strong> per month</td></tr></table>
+      <p class="muted small">Measured usage, repriced. The verdict above still uses this check's own prices.</p>`;
+  }catch(error){out.innerHTML='<p class="notice warn"></p>';out.firstChild.textContent=error.message;}
+  button.disabled=false;
+}
+const checkId={{check.id|tojson}};
+const askAnalyst=()=>busy(async()=>{await api('investigations',{report_id:checkId,question:{{analyst.question|tojson}}});location.hash='explain';location.reload();});
+{% if analyst.investigation %}{% set item = analyst.investigation %}
+const investigationId={{item.id|tojson}};
+const action=name=>busy(async()=>{await api('investigations/'+investigationId+'/'+name,{});location.reload();});
+{% if analyst.active %}
+reloadOnChange(async()=>{const d=await api('investigations/'+investigationId);return [d.state,(d.result.events||[]).length];},
+  [{{item.state|tojson}},{{item.result.get('events', [])|length}}]);
+{% endif %}
+{% if analyst.proposal_job and analyst.proposal_job.state in ['queued', 'running'] %}
+// Compare the finished fix with the original baseline, then show the result.
+(async function pollJob(){try{const d=await api('jobs/'+{{analyst.proposal_job.id|tojson}});
+  if(d.state==='completed'){await api('investigations/'+investigationId+'/compare-proposal',{});return location.reload();}
+  if(d.state!=={{analyst.proposal_job.state|tojson}}||d.progress!=={{analyst.proposal_job.progress}})return location.reload();}catch(e){}
+  setTimeout(pollJob,1500);})();
+{% endif %}{% endif %}
+// Show every case row, also when a link points at one that is folded away.
+const revealCases=()=>{document.querySelectorAll('tr.more').forEach(row=>row.hidden=false);document.getElementById('show-all')?.remove();};
+document.getElementById('show-all')?.addEventListener('click',revealCases);
+if(location.hash.startsWith('#case-')&&document.getElementById(location.hash.slice(1))?.hidden){revealCases();location.hash=location.hash;}
+</script>
+{% endblock %}
