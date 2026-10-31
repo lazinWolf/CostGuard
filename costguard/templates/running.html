@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Running · CostGuard{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <h1>Running the check</h1>
+  <p class="muted"><strong>{{progress.names[1]}}</strong> vs <strong>{{progress.names[0]}}</strong> on <code>{{progress.model}}</code></p>
+</div></div>
+
+<section class="card">
+  <p class="row"><span id="state" class="pill running">running</span> <strong id="summary">Starting…</strong></p>
+  <p class="muted small">Each case goes to the model with the baseline prompt, then with the candidate prompt. When both finish, CostGuard compares them and opens the check. You can leave this page; the check keeps running.</p>
+  <p id="message" class="notice warn" hidden></p>
+  <div class="prompts"><div><h3>Baseline <span id="baseline-count" class="muted small"></span></h3><div id="baseline"></div></div>
+  <div><h3>Candidate <span id="candidate-count" class="muted small"></span></h3><div id="candidate"></div></div></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const candidateJob={{candidate_job_id|tojson}};
+function show(side, job){
+  const rows=job.cases||[]; const correct=rows.filter(c=>c.quality===1).length;
+  const tokens=rows.reduce((sum,c)=>sum+(c.output_tokens||0),0);
+  document.getElementById(side+'-count').textContent=`${rows.length}/${job.total} · ${correct} correct · ${tokens} output tokens`;
+  document.getElementById(side).innerHTML=rows.map(c=>`<p class="small"><span class="answer ${c.quality===1?'right':'wrong'}">${c.quality===1?'✓':'✗'}</span> <strong>${escapeHtml(c.case_id)}</strong> → <span class="answer">${escapeHtml((c.output||c.error||'').slice(0,70))}${(c.output||'').length>70?'…':''}</span> <span class="muted">(${c.output_tokens??'?'} tokens)</span></p>`).join('')||'<p class="muted small">'+(job.state==='queued'?'waiting for the runner…':'starting…')+'</p>';
+}
+async function tick(){
+  try{
+    const check=await api('checks/running/'+candidateJob);
+    show('baseline',check.baseline); show('candidate',check.candidate);
+    const running=check.baseline.state==='running'?check.baseline:check.candidate;
+    document.getElementById('summary').textContent=check.state==='running'?`${check.baseline.state==='running'||check.baseline.state==='queued'?'Baseline':'Candidate'}: ${running.progress} of ${running.total} cases`:'';
+    if(check.state==='done')return location.href='/checks/'+check.report_id;
+    if(check.state==='failed'){
+      const state=document.getElementById('state');state.textContent='failed';state.className='pill failed';
+      document.getElementById('summary').textContent='The check stopped';
+      const message=document.getElementById('message');message.hidden=false;message.textContent=check.error;return;}
+  }catch(error){}
+  setTimeout(tick,1500);
+}
+tick();
+</script>
+{% endblock %}

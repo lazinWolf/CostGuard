@@ -3,11 +3,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
-from . import db, gateway, real_demo, service
+from . import db, gateway, service
+from .checks import CheckInput
 from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings, InvestigationInput
 from .models import ComparisonPolicy, PricingCatalog, Schema
-from .real_demo import RealDemoInput
 
 router = APIRouter(prefix="/api/v1")
 
@@ -28,10 +28,15 @@ def start_demo():
     return service.start_mock_demo()
 
 
-@router.post("/demo/real", status_code=202)
-def start_real_demo(data: RealDemoInput):
-    """Run the support-triage suite on a gateway model you choose; may incur provider charges."""
-    return real_demo.start(data)
+@router.post("/checks", status_code=202)
+def create_check(data: CheckInput):
+    """Run a baseline and a candidate on a gateway model and compare them; may incur provider charges."""
+    return service.create_check(data)
+
+
+@router.get("/checks/running/{candidate_job_id}")
+def check_progress(candidate_job_id: str):
+    return service.check_progress(candidate_job_id)
 
 
 @router.post("/investigations", status_code=202)

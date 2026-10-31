@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import httpx
 
-from . import db, evaluators, events, gateway, ratelimit
+from . import db, evaluators, events, gateway, ratelimit, service
 from .economics import case_cost
 from .execution import Call, CaseExecution, ExecutionArtifact, ExperimentSpec, Step
 from .investigation_worker import execute_investigation
@@ -199,6 +199,11 @@ def _next_job() -> bool:
     except Exception as exc:
         db.update_job(job_id, state="failed", error=f"runner error: {type(exc).__name__}")
         events.emit("runner.error", job_id=job_id, type=type(exc).__name__)
+        return True
+    try:
+        service.finish_check(job_id)  # Compares the pair when this was the second run of a check.
+    except Exception as exc:
+        events.emit("check.error", job_id=job_id, type=type(exc).__name__)
     return True
 
 

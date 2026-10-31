@@ -133,3 +133,4 @@ tr.nested td:first-child::before { content: "↳"; color: var(--faint); margin-r
   .limits td { display: block; border: 0; padding: .1rem .5rem; } .limits .measured { grid-column: 2; text-align: left; white-space: normal; }
 }
 label.row { font-weight: 400; }
+.cases textarea { min-height: 4.5rem; font-family: inherit; font-size: inherit; } .cases td { padding: .35rem .4rem; } .cases th:last-child { width: 3rem; }

@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import db, gateway, real_demo, service
+from . import checks, db, gateway, service
 from .diagnosis import format_usd, headline, mean_output_tokens, percent
 from .investigation import NUMBER, PROPOSAL_REMINDER, evidence_numbers, unsupported_numbers
 
@@ -35,7 +35,15 @@ def checks_page(request: Request):
 
 @router.get("/checks/new", response_class=HTMLResponse)
 def new_check_page(request: Request):
-    return _page(request, "new_check.html", suite=real_demo.suite(), analyst=db.get_analyst_settings())
+    return _page(request, "new_check.html", suite=checks.preset(), analyst=db.get_analyst_settings())
+
+
+@router.get("/checks/running/{candidate_job_id}", response_class=HTMLResponse)
+def running_check_page(request: Request, candidate_job_id: str):
+    progress = service.check_progress(candidate_job_id)
+    if progress["report_id"]:
+        return RedirectResponse(f"/checks/{progress['report_id']}")
+    return _page(request, "running.html", candidate_job_id=candidate_job_id, progress=progress)
 
 
 @router.get("/checks/{report_id}", response_class=HTMLResponse)

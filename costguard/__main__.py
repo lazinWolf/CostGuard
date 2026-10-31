@@ -7,7 +7,7 @@ import time
 from decimal import Decimal
 from pathlib import Path
 
-from . import db, real_demo, service
+from . import checks, db, service
 from .economics import ComparisonDetails, compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .models import ComparisonPolicy, PricingCatalog
@@ -64,11 +64,11 @@ def _markdown(report) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _wait(getter, item_id: str, label: str) -> dict:
+def _wait(getter, item_id: str, label: str, detail=lambda item: "") -> dict:
     shown = None
     while True:
         item = getter(item_id)
-        line = f"{label}: {item['state']}" + (f" {item['progress']}/{item['total']}" if "total" in item else "")
+        line = f"{label}: {item['state']}" + (f" {item['progress']}/{item['total']}" if "total" in item else "") + detail(item)
         if line != shown:
             print(line, file=sys.stderr, flush=True)
             shown = line
@@ -78,26 +78,20 @@ def _wait(getter, item_id: str, label: str) -> dict:
 
 
 def _demo(args) -> int:
-    reference = real_demo.suite()["reference_pricing"]
-    started = real_demo.start(real_demo.RealDemoInput(
-        model=args.model,
-        input_per_million_usd=(reference["input_per_million_usd"] if args.input_price is None
-                               else args.input_price),
-        output_per_million_usd=(reference["output_per_million_usd"] if args.output_price is None
-                                else args.output_price),
-        configure_analyst=not args.keep_analyst,
-    ))
-    artifacts = {}
-    for side in ("baseline", "candidate"):
-        job = _wait(db.get_job, started[f"{side}_job_id"], f"{side} run")
-        if job["state"] != "completed":
-            raise ValueError(f"{side} run ended {job['state']}: {job['error']}")
-        artifacts[side] = job["artifact_id"]
-    saved = service.compare(artifacts["baseline"], artifacts["candidate"],
-                            PricingCatalog.model_validate(started["pricing"]),
-                            ComparisonPolicy.model_validate(started["policy"]), started["monthly_requests"])
+    reference = checks.preset()["reference_pricing"]
+    started = service.create_check(checks.demo_check(
+        args.model,
+        reference["input_per_million_usd"] if args.input_price is None else args.input_price,
+        reference["output_per_million_usd"] if args.output_price is None else args.output_price,
+        configure_analyst=not args.keep_analyst))
+    progress = _wait(service.check_progress, started["candidate_job_id"], "check", lambda item: next(
+        (f" ({item[side]['progress']}/{item[side]['total']} cases, {side})" for side in ("baseline", "candidate")
+         if item[side]["state"] == "running"), ""))
+    if progress["state"] != "done":
+        raise ValueError(f"check {progress['state']}: {progress['error']}")
+    saved = db.get_comparison(progress["report_id"])
     print(_markdown(ComparisonDetails.model_validate(saved["report"])))
-    print(f"Report: http://localhost:8000/reports/{saved['id']}", flush=True)
+    print(f"Check: http://localhost:8000/checks/{saved['id']}", flush=True)
     if args.investigate:
         investigation_id = service.start_investigation(saved["id"], args.question)
         result = _wait(db.get_investigation, investigation_id, "investigation")
@@ -108,7 +102,7 @@ def _demo(args) -> int:
                 print(f"- {finding['text']} [{', '.join(finding['evidence'])}]")
         else:
             print(f"\nInvestigation {result['state']}: {result['error']}")
-        print(f"Investigation: http://localhost:8000/investigations/{investigation_id}")
+        print(f"Analyst: http://localhost:8000/checks/{saved['id']}#explain")
     return 0
 
 

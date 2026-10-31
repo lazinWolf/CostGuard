@@ -79,6 +79,8 @@ def main():
             stale = session.get(db.InvestigationRow, stale_id)
             if stale is not None:
                 session.delete(stale)
+            for pending in session.scalars(db.select(db.SettingRow).where(db.SettingRow.id.like("pending-check:%"))):
+                session.delete(pending)
             setting = session.get(db.SettingRow, "analyst")
             if original_analyst is None and setting is not None:
                 session.delete(setting)
@@ -182,16 +184,24 @@ def run(stale_id):
         assert (Decimal(scenario["cost_per_request_usd"]["candidate"])
                 < Decimal(scenario["cost_per_request_usd"]["baseline"]))
         # The real-model demo endpoint queues the support-triage suite on any gateway route.
-        triage = request(client, "POST", "/api/v1/demo/real", json={
-            "model": "costguard-mock/echo", "input_per_million_usd": "0.1",
-            "output_per_million_usd": "0.4", "configure_analyst": False})
+        demo = json.loads((ROOT / "examples/support_triage.json").read_text())
+        triage = request(client, "POST", "/api/v1/checks", json={
+            "model": "costguard-mock/echo", "input_per_million_usd": "0.1", "output_per_million_usd": "0.4",
+            "suite_id": demo["suite_id"], "baseline_name": demo["baseline"]["name"],
+            "candidate_name": demo["candidate"]["name"], "baseline_prompt": demo["baseline"]["system_prompt"],
+            "candidate_prompt": demo["candidate"]["system_prompt"], "cases": demo["cases"],
+            "evaluator": demo["evaluator"], "policy": demo["policy"]})
         triage_spec = request(client, "GET", "/api/v1/suites/support-triage")
         triage_ids = [completed_job(client, triage_spec, triage[key])
                       for key in ("baseline_job_id", "candidate_job_id")]
-        triage_report = request(client, "POST", "/api/v1/comparisons", json={
-            "baseline_id": triage_ids[0], "candidate_id": triage_ids[1],
-            "pricing": triage["pricing"], "policy": triage["policy"],
-            "monthly_requests": triage["monthly_requests"]})
+        # The runner compares the pair by itself once the second run finishes.
+        progress = wait_for(lambda: request(client, "GET", f"/api/v1/checks/running/{triage['candidate_job_id']}"),
+                            lambda item: item["state"] != "running", "automatic comparison")
+        assert progress["state"] == "done", progress
+        triage_report = {"id": progress["report_id"],
+                         "report": request(client, "GET", f"/api/v1/comparisons/{progress['report_id']}")["report"]}
+        assert client.get(f"/checks/running/{triage['candidate_job_id']}", follow_redirects=False
+                          ).headers["location"] == f"/checks/{progress['report_id']}"
         assert Decimal(triage_report["report"]["economic"]["cost_per_request_usd"]["delta"]) > 0
         assert request(client, "GET", f"/api/v1/artifacts/{triage_ids[1]}")["cases"][0]["output"]
         assert client.post("/api/v1/jobs", json=baseline,

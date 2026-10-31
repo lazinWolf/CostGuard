@@ -1,53 +1,88 @@
 {% extends "base.html" %}
 {% block title %}New check · CostGuard{% endblock %}
 {% block content %}
+{% set demo = suite %}
 <div class="page-head"><div>
   <h1>New check</h1>
-  <p class="muted">{{suite.description}} {{suite.cases|length}} support messages × 2 prompts, scored by a <code>{{suite.evaluator}}</code> label match.</p>
+  <p class="muted">Run two versions of a prompt on the same cases. CostGuard prices both, scores the answers and applies your limits. Filled in with a demo: a friendlier support-triage prompt that looks harmless in review.</p>
 </div></div>
 
-<form class="card" id="new-check">
-  <div class="grid">
-    <div><label for="model">Model (provider/model)</label>
-      <input id="model" list="models" required placeholder="ollama/llama3.2:3b-instruct-q4_K_M"><datalist id="models"></datalist>
-      <p id="gateway-note" class="muted small">Checking the gateway…</p></div>
-    <div><label for="input-price">Input USD / million tokens</label><input id="input-price" type="number" min="0" step="any" required value="{{suite.reference_pricing.input_per_million_usd}}"></div>
-    <div><label for="output-price">Output USD / million tokens</label><input id="output-price" type="number" min="0" step="any" required value="{{suite.reference_pricing.output_per_million_usd}}"></div>
-  </div>
-  <p class="muted small">The prices are notional reference rates, so a free local model still shows a cost difference. Enter your provider's real prices for a cloud model.</p>
-  <label class="row"><input id="use-as-analyst" type="checkbox" {{'' if analyst else 'checked'}} style="width:auto"> Also use this model as the analyst that explains a failing check (it needs tool-calling support){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% endif %}</label>
-  <p class="row"><button id="start" type="submit">Run the check</button>
-    <span class="small muted">Calls the model {{suite.cases|length * 2}} times and may incur provider charges. A local model on CPU can take several minutes.</span></p>
-  <p id="message" class="notice warn" hidden></p>
+<form id="new-check">
+  <section class="card"><h2>1 · Model</h2>
+    <label for="model">Model (provider/model)</label>
+    <input id="model" list="models" required placeholder="ollama/llama3.2:3b-instruct-q4_K_M"><datalist id="models"></datalist>
+    <p id="gateway-note" class="muted small">Checking the gateway…</p>
+    <details><summary class="small">Prices: ${{demo.reference_pricing.input_per_million_usd}} / ${{demo.reference_pricing.output_per_million_usd}} per million tokens (notional)</summary>
+      <div class="grid">
+        <div><label for="input-price">Input USD / million tokens</label><input id="input-price" type="number" min="0" step="any" required value="{{demo.reference_pricing.input_per_million_usd}}"></div>
+        <div><label for="output-price">Output USD / million tokens</label><input id="output-price" type="number" min="0" step="any" required value="{{demo.reference_pricing.output_per_million_usd}}"></div>
+      </div>
+      <p class="muted small">A local model has no per-token bill, so these are notional reference rates that make the cost difference visible. Enter your provider's real prices for a cloud model.</p>
+    </details>
+  </section>
+
+  <section class="card"><h2>2 · The two versions</h2>
+    <p class="lede">Only the system prompt differs. Everything else (model, cases, prices, settings) is identical.</p>
+    <div class="prompts">
+      <div><label for="baseline-name">Baseline name</label><input id="baseline-name" required maxlength="100" value="{{demo.baseline.name}}">
+        <label for="baseline-prompt">Baseline system prompt</label><textarea id="baseline-prompt" required maxlength="8000">{{demo.baseline.system_prompt}}</textarea></div>
+      <div><label for="candidate-name">Candidate name</label><input id="candidate-name" required maxlength="100" value="{{demo.candidate.name}}">
+        <label for="candidate-prompt">Candidate system prompt</label><textarea id="candidate-prompt" required maxlength="8000">{{demo.candidate.system_prompt}}</textarea></div>
+    </div>
+  </section>
+
+  <section class="card"><h2>3 · Cases</h2>
+    <p class="lede">Each message is sent with both prompts. An answer is correct when it matches the expected answer.</p>
+    <div class="table-wrap"><table class="cases"><tr><th>Name</th><th>Message</th><th>Expected answer</th><th></th></tr>
+      <tbody id="case-rows">{% for case in demo.cases %}<tr>
+        <td><input class="case-id" required aria-label="Case name" value="{{case.case_id}}"></td>
+        <td><textarea class="case-prompt" required rows="3" aria-label="Message">{{case.prompt}}</textarea></td>
+        <td><input class="case-expected" required aria-label="Expected answer" value="{{case.expected_text}}"></td>
+        <td><button type="button" class="secondary remove-case" aria-label="Remove case">✕</button></td></tr>{% endfor %}</tbody></table></div>
+    <p class="row"><button type="button" class="secondary" id="add-case">Add a case</button>
+      <label class="row small" for="evaluator" style="margin:0">Match <select id="evaluator" style="width:auto">
+        <option value="normalized" {{'selected' if demo.evaluator == 'normalized'}}>ignoring case and punctuation</option>
+        <option value="exact" {{'selected' if demo.evaluator == 'exact'}}>exactly (ignoring case)</option></select></label></p>
+  </section>
+
+  <section class="card"><h2>4 · Limits</h2>
+    <p class="lede">The check fails when the candidate breaks any limit.</p>
+    <div class="grid">
+      <div><label for="max-cost">Cost per request may rise by at most (%)</label><input id="max-cost" type="number" min="0" step="any" value="{{demo.policy.max_cost_increase_percent}}"></div>
+      <div><label for="quality-mode">Quality</label><select id="quality-mode">
+        <option value="no-drop" selected>No more wrong answers than baseline</option>
+        <option value="min">At least a share of answers correct</option>
+        <option value="none">No quality limit</option></select>
+        <input id="quality-min" type="number" min="0" max="100" step="any" value="85" aria-label="Minimum share correct (%)" hidden style="margin-top:.4rem"></div>
+      <div><label for="monthly">Requests per month (for the monthly cost)</label><input id="monthly" type="number" min="0" step="1" value="{{demo.monthly_requests}}"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <label class="row"><input id="use-as-analyst" type="checkbox" {{'' if analyst else 'checked'}} style="width:auto"> Also use this model as the analyst that explains a failing check (it needs tool-calling support){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% endif %}</label>
+    <p class="row"><button id="start" type="submit">Run the check</button>
+      <span class="small muted">Calls the model twice per case and may incur provider charges. Runs at temperature 0, so differences come from the prompt.</span></p>
+    <p id="message" class="notice warn" hidden></p>
+  </section>
 </form>
 
-<section class="card" id="live" hidden><h2>Running</h2>
-  <p class="muted small">Each message goes to the model with the baseline prompt, then with the candidate prompt. When both finish, CostGuard compares them and opens the check.</p>
-  <div class="prompts"><div><h3>Baseline <span id="live-baseline-count" class="muted small"></span></h3><div id="live-baseline"></div></div>
-  <div><h3>Candidate <span id="live-candidate-count" class="muted small"></span></h3><div id="live-candidate"></div></div></div>
-</section>
+<template id="case-row"><tr>
+  <td><input class="case-id" required aria-label="Case name"></td>
+  <td><textarea class="case-prompt" required rows="3" aria-label="Message"></textarea></td>
+  <td><input class="case-expected" required aria-label="Expected answer"></td>
+  <td><button type="button" class="secondary remove-case" aria-label="Remove case">✕</button></td></tr></template>
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function waitJob(id, label, report, limitSeconds){
-  for(let waited=0; waited<limitSeconds; waited+=2){
-    const job=await api('jobs/'+id);
-    showLive(label.toLowerCase(), job);
-    if(job.state==='completed')return job.artifact_id;
-    if(!['queued','running'].includes(job.state))throw Error(label+' run '+job.state+(job.error?': '+job.error:''));
-    report(label+' run: '+job.state+' · '+job.progress+' / '+job.total+' cases');
-    await new Promise(resolve=>setTimeout(resolve,2000));
-  }
-  throw Error(label+' run is still pending. Follow it from the job page, then compare.');
-}
-function showLive(side, job){
-  document.getElementById('live').hidden=false;
-  const rows=job.cases||[]; const correct=rows.filter(c=>c.quality===1).length;
-  const tokens=rows.reduce((sum,c)=>sum+(c.output_tokens||0),0);
-  document.getElementById('live-'+side+'-count').textContent=`${rows.length}/${job.total} · ${correct} correct · ${tokens} output tokens`;
-  document.getElementById('live-'+side).innerHTML=rows.map(c=>`<p class="small"><span class="answer ${c.quality===1?'right':'wrong'}">${c.quality===1?'✓':'✗'}</span> <strong>${escapeHtml(c.case_id)}</strong> → <span class="answer">${escapeHtml((c.output||c.error||'').slice(0,70))}${(c.output||'').length>70?'…':''}</span> <span class="muted">(${c.output_tokens??'?'} tokens)</span></p>`).join('')||'<p class="muted small">waiting…</p>';
-}
+const rows=document.getElementById('case-rows');
+document.getElementById('add-case').addEventListener('click',()=>{
+  rows.appendChild(document.getElementById('case-row').content.cloneNode(true));
+  const ids=[...rows.querySelectorAll('.case-id')];ids[ids.length-1].value='case-'+ids.length;ids[ids.length-1].focus();});
+rows.addEventListener('click',event=>{if(event.target.closest('.remove-case')&&rows.children.length>1)event.target.closest('tr').remove();});
+const mode=document.getElementById('quality-mode'), minimum=document.getElementById('quality-min');
+mode.addEventListener('change',()=>minimum.hidden=mode.value!=='min');
+
 (async()=>{
   const note=document.getElementById('gateway-note');const input=document.getElementById('model');
   try{const gateway=await api('gateway');const list=document.getElementById('models');
@@ -58,17 +93,24 @@ function showLive(side, job){
     note.textContent=gateway.models.length+' model IDs available from the gateway.';
   }catch(error){note.textContent='Unable to reach the gateway status endpoint.';}
 })();
+
+const value=id=>document.getElementById(id).value;
+function policy(){
+  const cost=value('max-cost');
+  return {max_cost_increase_percent:cost===''?null:cost,
+    max_quality_drop:mode.value==='no-drop'?'0':null,
+    min_candidate_quality_score:mode.value==='min'?String(Number(minimum.value)/100):null};
+}
 document.getElementById('new-check').addEventListener('submit',event=>{
   event.preventDefault();
-  const status=text=>{const m=document.getElementById('message');m.hidden=false;m.textContent=text;};
   busy(async()=>{
-    status('Queuing runs…');
-    const demo=await api('demo/real',{model:document.getElementById('model').value.trim(),input_per_million_usd:document.getElementById('input-price').value,output_per_million_usd:document.getElementById('output-price').value,configure_analyst:document.getElementById('use-as-analyst').checked});
-    const baseline=await waitJob(demo.baseline_job_id,'Baseline',status,3600);
-    const candidate=await waitJob(demo.candidate_job_id,'Candidate',status,3600);
-    status('Saving comparison…');
-    const saved=await api('comparisons',{baseline_id:baseline,candidate_id:candidate,pricing:demo.pricing,policy:demo.policy,monthly_requests:demo.monthly_requests||100000});
-    location.href='/checks/'+saved.id;
+    const cases=[...rows.children].map(row=>({case_id:row.querySelector('.case-id').value.trim(),
+      prompt:row.querySelector('.case-prompt').value,expected_text:row.querySelector('.case-expected').value.trim()}));
+    const started=await api('checks',{model:value('model').trim(),input_per_million_usd:value('input-price'),output_per_million_usd:value('output-price'),
+      baseline_name:value('baseline-name').trim(),candidate_name:value('candidate-name').trim(),
+      baseline_prompt:value('baseline-prompt'),candidate_prompt:value('candidate-prompt'),cases,evaluator:value('evaluator'),
+      policy:policy(),monthly_requests:Number(value('monthly')),configure_analyst:document.getElementById('use-as-analyst').checked});
+    location.href='/checks/running/'+started.candidate_job_id;
   });
 });
 </script>

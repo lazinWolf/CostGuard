@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from . import db, diagnosis, events
+from . import checks, db, diagnosis, events
 from .economics import compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings
@@ -109,6 +109,57 @@ def start_mock_demo() -> dict:
     return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
             "pricing": specs[0].pricing.model_dump(mode="json"),
             "policy": {"max_cost_increase_percent": 10, "min_candidate_quality_score": 1}}
+
+
+PENDING = "pending-check:"
+RUN_FAILED = {"failed", "cancelled", "interrupted"}
+
+
+def create_check(data: checks.CheckInput) -> dict:
+    """Queue both runs of a check. The runner compares them when the second finishes."""
+    baseline, candidate, pricing = checks.build_specs(data)
+    db.save_suite(baseline)
+    if data.configure_analyst:
+        db.save_analyst_settings(checks.analyst_from(data, pricing))
+    baseline_job, candidate_job = db.create_job(baseline), db.create_job(candidate)
+    db.save_setting(PENDING + candidate_job, {
+        "baseline_job_id": baseline_job, "candidate_job_id": candidate_job,
+        "names": [baseline.name, candidate.name], "model": data.model, "report_id": None,
+        "pricing": pricing.model_dump(mode="json"), "policy": data.policy.model_dump(mode="json"),
+        "monthly_requests": data.monthly_requests})
+    events.emit("check.created", baseline_job_id=baseline_job, candidate_job_id=candidate_job, model=data.model)
+    return {"baseline_job_id": baseline_job, "candidate_job_id": candidate_job}
+
+
+def finish_check(job_id: str) -> str | None:
+    """When `job_id` was the second run of a check and both completed, save the comparison.
+
+    Called by the runner after every job; a job that belongs to no check is ignored. Returns the new
+    report ID. Safe to call again: a check is compared once.
+    """
+    plan = db.get_setting(PENDING + job_id)
+    if plan is None or plan["report_id"]:
+        return None
+    runs = [db.get_job(plan["baseline_job_id"]), db.get_job(job_id)]
+    if any(run is None or run["state"] != "completed" or not run["artifact_id"] for run in runs):
+        return None
+    saved = compare(runs[0]["artifact_id"], runs[1]["artifact_id"], PricingCatalog.model_validate(plan["pricing"]),
+                    ComparisonPolicy.model_validate(plan["policy"]), plan["monthly_requests"])
+    db.save_setting(PENDING + job_id, {**plan, "report_id": saved["id"]})
+    return saved["id"]
+
+
+def check_progress(candidate_job_id: str) -> dict:
+    """Where a check is: running, done (with its report) or failed (with the reason)."""
+    plan = db.get_setting(PENDING + candidate_job_id)
+    if plan is None:
+        raise NotFound("check run not found")
+    baseline, candidate = db.get_job(plan["baseline_job_id"]), db.get_job(candidate_job_id)
+    broken = next((run for run in (baseline, candidate) if run["state"] in RUN_FAILED), None)
+    state = "done" if plan["report_id"] else "failed" if broken else "running"
+    return {"state": state, "report_id": plan["report_id"], "names": plan["names"], "model": plan["model"],
+            "error": (broken["error"] or f"The run {broken['state']}.") if broken and state == "failed" else None,
+            "baseline": baseline, "candidate": candidate}
 
 
 def list_checks(limit: int | None = None) -> list[dict]:

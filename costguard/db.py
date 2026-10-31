@@ -321,19 +321,28 @@ def cancel_job(job_id: str) -> bool:
         return True
 
 
-def get_analyst_settings() -> dict | None:
+def get_setting(key: str) -> dict | None:
     with session_scope() as session:
-        row = session.get(SettingRow, "analyst")
+        row = session.get(SettingRow, key)
         return row.payload if row else None
 
 
-def save_analyst_settings(settings) -> None:
+def save_setting(key: str, payload) -> None:
     with session_scope() as session:
-        row = session.get(SettingRow, "analyst")
+        row = session.get(SettingRow, key)
+        value = payload if isinstance(payload, dict) else _json(payload)
         if row is None:
-            session.add(SettingRow(id="analyst", payload=_json(settings)))
+            session.add(SettingRow(id=key, payload=value))
         else:
-            row.payload = _json(settings)
+            row.payload = value
+
+
+def get_analyst_settings() -> dict | None:
+    return get_setting("analyst")
+
+
+def save_analyst_settings(settings) -> None:
+    save_setting("analyst", settings)
 
 
 def source_experiment(artifact_id: str) -> ExperimentSpec | None:
