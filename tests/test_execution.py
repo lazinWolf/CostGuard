@@ -7,9 +7,9 @@ from uuid import uuid4
 import httpx
 from pydantic import ValidationError
 
-from costguard.economics import compare_artifacts
+from costguard.economics import case_cost, compare_artifacts
 from costguard.api import ScenarioInput, scenario
-from costguard.execution import ExecutionArtifact, ExperimentSpec
+from costguard.execution import ExecutionArtifact, ExperimentSpec, Judge, Judgement
 from costguard.hook import ArtifactRecorder
 from costguard.models import ComparisonPolicy
 from costguard.runner import run_case
@@ -29,6 +29,47 @@ def artifact(name: str, tokens: int = 1000, *, source: str = "provider", evaluat
                        "name": "echo", "latency_ms": 100}],
                    "quality_score": "1", "evaluator": evaluator}],
     })
+
+
+class JudgementTests(unittest.TestCase):
+    def test_artifacts_without_a_judge_serialize_exactly_as_before(self):
+        left = artifact("baseline")
+        self.assertNotIn("judgement", json.loads(left.model_dump_json())["cases"][0])
+        again = ExecutionArtifact.model_validate_json(left.model_dump_json())
+        self.assertEqual(again.model_dump_json(), left.model_dump_json())
+
+    def test_a_judgement_is_kept_beside_the_case_and_out_of_its_cost(self):
+        left = artifact("baseline")
+        cost = case_cost(left.cases[0], left.pricing)
+        left.cases[0].judgement = Judgement(passed=True, reason="Short.", model="test/judge", cost_usd=Decimal("0.5"))
+        stored = json.loads(left.model_dump_json())["cases"][0]["judgement"]
+        self.assertEqual((stored["passed"], stored["reason"]), (True, "Short."))
+        self.assertEqual(case_cost(left.cases[0], left.pricing), cost)
+
+    def test_the_runner_records_the_judges_verdict_apart_from_the_workload(self):
+        judge = Judge(provider="test", model="judge", rubric="Short.", input_per_million_usd=1, output_per_million_usd=1)
+        spec = ExperimentSpec(suite_id="s", name="n", provider="test", model="echo", pricing=artifact("x").pricing,
+                              evaluator="llm_judge", judge=judge, cases=[{"case_id": "a", "prompt": "hi"}])
+
+        def handle(request):
+            body = json.loads(request.content)
+            content = '{"pass": true, "reason": "Short."}' if body["model"] == "test/judge" else "Hello there"
+            return httpx.Response(200, json={"choices": [{"message": {"content": content}}],
+                                             "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+        with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(handle)) as client:
+            case = run_case(spec, spec.cases[0], client)
+        self.assertEqual((case.output, case.quality_score, case.evaluator), ("Hello there", 1, "llm_judge:v1:test/judge"))
+        self.assertEqual(case.judgement.reason, "Short.")
+        self.assertEqual(len(case.calls), 1)  # Only the workload's own call is a workload call.
+
+    def test_a_judged_experiment_needs_its_judge(self):
+        base = dict(suite_id="s", name="n", provider="test", model="echo", pricing=artifact("x").pricing,
+                    cases=[{"case_id": "a", "prompt": "hi"}])
+        judge = Judge(provider="test", model="echo", rubric="Short.", input_per_million_usd=0, output_per_million_usd=0)
+        ExperimentSpec(**base, evaluator="llm_judge", judge=judge)
+        for changes in (dict(evaluator="llm_judge"), dict(judge=judge)):
+            with self.assertRaises(ValueError):
+                ExperimentSpec(**base, **changes)
 
 
 class ExecutionTests(unittest.TestCase):

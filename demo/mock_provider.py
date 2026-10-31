@@ -9,7 +9,7 @@ app = FastAPI(title="CostGuard mock provider")
 
 @app.get("/v1/models")
 def models():
-    return {"object": "list", "data": [{"id": model, "object": "model"} for model in ("echo", "analyst")]}
+    return {"object": "list", "data": [{"id": model, "object": "model"} for model in ("echo", "analyst", "judge")]}
 
 
 DIGEST_HEADER = "Evidence from CostGuard (JSON):\n"
@@ -58,6 +58,12 @@ def completion(body: dict):
                    if m.get("role") == "user"), "")
     if "[fail]" in prompt:
         raise HTTPException(503, "controlled failure")
+    if body.get("model", "").split("/")[-1] == "judge":
+        words = len(json.loads(prompt)["answer"].split())  # Passes any answer of at most 20 words.
+        verdict = json.dumps({"pass": words <= 20, "reason": f"The answer has {words} words."})
+        return {"id": "mock-judgement", "object": "chat.completion", "model": "judge",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": verdict}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 40, "completion_tokens": 15, "total_tokens": 55}}
     if body.get("model", "").split("/")[-1] == "analyst":
         message = analyst_message(messages)
         input_tokens = sum(len(str(m.get("content", "")).split()) for m in messages)

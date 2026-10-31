@@ -258,6 +258,17 @@ def pick_winner(fixes: list[dict]) -> str | None:
     return min(passing, key=lambda fix: (Decimal(str(fix["cost"])), fix["words"]))["name"]
 
 
+def judge_spend(*artifacts) -> dict | None:
+    """What the judge's calls cost across runs, or None when nothing was judged.
+    This is never part of the workload cost; `complete` is false when some call reported no usage."""
+    judgements = [case.judgement for artifact in artifacts for case in artifact.cases if case.judgement]
+    if not judgements:
+        return None
+    return {"calls": len(judgements), "model": judgements[0].model,
+            "cost": sum((item.cost_usd for item in judgements if item.cost_usd is not None), Decimal(0)),
+            "complete": all(item.cost_usd is not None for item in judgements)}
+
+
 def correct_answers(baseline, candidate, cases: int | None) -> str | None:
     """'6/8 → 0/8 correct', or None when no quality scores were compared."""
     if baseline is None or candidate is None or not cases:

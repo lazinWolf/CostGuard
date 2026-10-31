@@ -1,5 +1,6 @@
 """The OpenAI-compatible gateway (Bifrost) that every model call goes through."""
 
+import json
 import os
 
 import httpx
@@ -38,3 +39,12 @@ def status() -> dict:
                 "settings_url": public_url()}
     except (httpx.HTTPError, ValueError):
         return {"status": "unavailable", "models": [], "settings_url": public_url()}
+
+
+def parse_json_reply(content: str | None):
+    """Parse a model's structured reply, tolerating a surrounding Markdown code fence."""
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    return json.loads(text)

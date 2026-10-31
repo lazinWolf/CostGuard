@@ -56,6 +56,38 @@ class CheckInputTests(unittest.TestCase):
             checks.build_specs(check_input(cases=CASES + CASES[:1]))
 
 
+JUDGE = {"provider": "ollama", "model": "llama3.2:3b", "rubric": "Polite and under 50 words.",
+         "input_per_million_usd": "0.1", "output_per_million_usd": "0.4"}
+
+
+class JudgedCheckTests(unittest.TestCase):
+    def test_a_judged_check_needs_a_judge_and_no_expected_answers(self):
+        cases = [{"case_id": "a", "prompt": "Where is my refund?"}]
+        baseline, candidate, _ = checks.build_specs(check_input(evaluator="llm_judge", judge=JUDGE, cases=cases))
+        self.assertEqual((baseline.evaluator, baseline.judge.rubric), ("llm_judge", "Polite and under 50 words."))
+        self.assertEqual(baseline.judge, candidate.judge)
+        for changes in (dict(evaluator="llm_judge", cases=cases),  # No judge.
+                        dict(judge=JUDGE),                         # A judge nobody asked for.
+                        dict(evaluator="llm_judge", judge=dict(JUDGE, rubric=""))):
+            with self.assertRaises(ValidationError, msg=changes):
+                check_input(**changes)
+
+    def test_every_preset_builds_into_a_valid_check(self):
+        for name in checks.PRESETS:
+            demo = checks.preset(name)
+            data = checks.CheckInput(
+                model="ollama/llama3.2:3b", input_per_million_usd=0.1, output_per_million_usd=0.4,
+                baseline_prompt=demo["baseline"]["system_prompt"], candidate_prompt=demo["candidate"]["system_prompt"],
+                baseline_name=demo["baseline"]["name"], candidate_name=demo["candidate"]["name"],
+                cases=demo["cases"], evaluator=demo["evaluator"],
+                judge=demo.get("judge") and {**demo["judge"], "provider": "ollama", "model": "llama3.2:3b",
+                                             "input_per_million_usd": 0.1, "output_per_million_usd": 0.4},
+                policy=demo["policy"])
+            self.assertEqual(checks.build_specs(data)[0].evaluator, demo["evaluator"], name)
+        self.assertEqual([item["name"] for item in checks.presets()], ["support-triage", "refund-reply"])
+        self.assertEqual(checks.preset("unknown")["suite_id"], "support-triage")
+
+
 class PipelineTests(unittest.TestCase):
     """A check is queued as two jobs; the runner compares them once the second is done."""
 

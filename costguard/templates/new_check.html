@@ -4,7 +4,8 @@
 {% set demo = suite %}
 <div class="page-head"><div>
   <h1>New check</h1>
-  <p class="muted">Run two versions of a prompt on the same cases. CostGuard prices both, scores the answers and applies your limits. Filled in with a demo: a friendlier support-triage prompt that looks harmless in review.</p>
+  <p class="muted">Run two versions of a prompt on the same cases. CostGuard prices both, scores the answers and applies your limits. Filled in with an example: {{demo.description}}</p>
+  <p class="small row">Start from: {% for item in presets %}<a class="chip" {{'aria-current=true' if item.name == current}} href="/checks/new?preset={{item.name}}">{{item.title}}</a>{% endfor %}</p>
 </div></div>
 
 <form id="new-check">
@@ -32,17 +33,25 @@
   </section>
 
   <section class="card"><h2>3 · Cases</h2>
-    <p class="lede">Each message is sent with both prompts. An answer is correct when it matches the expected answer.</p>
-    <div class="table-wrap"><table class="cases"><tr><th>Name</th><th>Message</th><th>Expected answer</th><th></th></tr>
+    <p class="lede">Each message is sent with both prompts. <span class="when-label">An answer is correct when it matches the expected answer.</span><span class="when-judged" hidden>A model judges each answer against the rubric below.</span></p>
+    <div class="table-wrap"><table class="cases"><tr><th>Name</th><th>Message</th><th><span class="when-label">Expected answer</span><span class="when-judged" hidden>Reference answer (optional)</span></th><th></th></tr>
       <tbody id="case-rows">{% for case in demo.cases %}<tr>
         <td><input class="case-id" required aria-label="Case name" value="{{case.case_id}}"></td>
         <td><textarea class="case-prompt" required rows="3" aria-label="Message">{{case.prompt}}</textarea></td>
-        <td><input class="case-expected" required aria-label="Expected answer" value="{{case.expected_text}}"></td>
+        <td><input class="case-expected" required aria-label="Expected answer" value="{{case.expected_text or ''}}"></td>
         <td><button type="button" class="secondary remove-case" aria-label="Remove case">✕</button></td></tr>{% endfor %}</tbody></table></div>
     <p class="row"><button type="button" class="secondary" id="add-case">Add a case</button>
       <label class="row small" for="evaluator" style="margin:0">Match <select id="evaluator" style="width:auto">
         <option value="normalized" {{'selected' if demo.evaluator == 'normalized'}}>ignoring case and punctuation</option>
-        <option value="exact" {{'selected' if demo.evaluator == 'exact'}}>exactly (ignoring case)</option></select></label></p>
+        <option value="exact" {{'selected' if demo.evaluator == 'exact'}}>exactly (ignoring case)</option>
+        <option value="llm_judge" {{'selected' if demo.evaluator == 'llm_judge'}}>by a judge model, against a rubric</option></select></label></p>
+    <div id="judge-fields" {{'hidden' if demo.evaluator != 'llm_judge'}}>
+      <label for="rubric">Rubric</label>
+      <textarea id="rubric" maxlength="2000" rows="3">{{demo.judge.rubric if demo.judge}}</textarea>
+      <label for="judge-model">Judge model (provider/model)</label>
+      <input id="judge-model" list="models" placeholder="same as the model above">
+      <p class="muted small">The judge's verdict is a model's opinion, not a certainty: it runs at temperature 0 and its reason is shown beside each answer. If it gives no usable verdict the answer has no score and a quality limit becomes inconclusive. Judge calls are priced at the prices above and reported separately from the workload cost. Use a model that answers directly (a reasoning model may spend its whole budget thinking) and is stronger than the one being checked: small local models cannot count words or follow strict rubrics, so keep rubrics to what they can read, or route the judge to a larger model through the gateway.</p>
+    </div>
   </section>
 
   <section class="card"><h2>4 · Limits</h2>
@@ -78,8 +87,19 @@
 const rows=document.getElementById('case-rows');
 document.getElementById('add-case').addEventListener('click',()=>{
   rows.appendChild(document.getElementById('case-row').content.cloneNode(true));
-  const ids=[...rows.querySelectorAll('.case-id')];ids[ids.length-1].value='case-'+ids.length;ids[ids.length-1].focus();});
+  const ids=[...rows.querySelectorAll('.case-id')];ids[ids.length-1].value='case-'+ids.length;ids[ids.length-1].focus();syncEvaluator();});
 rows.addEventListener('click',event=>{if(event.target.closest('.remove-case')&&rows.children.length>1)event.target.closest('tr').remove();});
+// A judged check needs a rubric and a judge; the expected answer becomes an optional reference.
+const evaluator=document.getElementById('evaluator');
+function syncEvaluator(){
+  const judged=evaluator.value==='llm_judge';
+  document.getElementById('judge-fields').hidden=!judged;
+  document.querySelectorAll('.when-judged').forEach(el=>el.hidden=!judged);
+  document.querySelectorAll('.when-label').forEach(el=>el.hidden=judged);
+  document.getElementById('rubric').required=judged;
+  document.querySelectorAll('.case-expected').forEach(input=>input.required=!judged);
+}
+evaluator.addEventListener('change',syncEvaluator);syncEvaluator();
 const mode=document.getElementById('quality-mode'), minimum=document.getElementById('quality-min');
 mode.addEventListener('change',()=>minimum.hidden=mode.value!=='min');
 
@@ -105,10 +125,14 @@ document.getElementById('new-check').addEventListener('submit',event=>{
   event.preventDefault();
   busy(async()=>{
     const cases=[...rows.children].map(row=>({case_id:row.querySelector('.case-id').value.trim(),
-      prompt:row.querySelector('.case-prompt').value,expected_text:row.querySelector('.case-expected').value.trim()}));
+      prompt:row.querySelector('.case-prompt').value,expected_text:row.querySelector('.case-expected').value.trim()||null}));
+    const judged=evaluator.value==='llm_judge';
+    const judge=judged?(()=>{const model=(value('judge-model').trim()||value('model').trim()),slash=model.indexOf('/');
+      return {provider:model.slice(0,slash),model:model.slice(slash+1),rubric:value('rubric'),
+        input_per_million_usd:value('input-price'),output_per_million_usd:value('output-price')};})():null;
     const started=await api('checks',{model:value('model').trim(),input_per_million_usd:value('input-price'),output_per_million_usd:value('output-price'),
       baseline_name:value('baseline-name').trim(),candidate_name:value('candidate-name').trim(),
-      baseline_prompt:value('baseline-prompt'),candidate_prompt:value('candidate-prompt'),cases,evaluator:value('evaluator'),
+      baseline_prompt:value('baseline-prompt'),candidate_prompt:value('candidate-prompt'),cases,evaluator:evaluator.value,judge,
       policy:policy(),monthly_requests:Number(value('monthly')),configure_analyst:document.getElementById('use-as-analyst').checked});
     location.href='/checks/running/'+started.candidate_job_id;
   });

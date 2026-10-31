@@ -34,8 +34,9 @@ def checks_page(request: Request):
 
 
 @router.get("/checks/new", response_class=HTMLResponse)
-def new_check_page(request: Request):
-    return _page(request, "new_check.html", suite=checks.preset(), analyst=db.get_analyst_settings())
+def new_check_page(request: Request, preset: str = "support-triage"):
+    return _page(request, "new_check.html", suite=checks.preset(preset), presets=checks.presets(),
+                 current=preset if preset in checks.PRESETS else "support-triage", analyst=db.get_analyst_settings())
 
 
 @router.get("/checks/running/{candidate_job_id}", response_class=HTMLResponse)

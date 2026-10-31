@@ -55,7 +55,8 @@
 {% include "_analyst.html" %}
 
 {% if check.cases %}<section class="card"><h2>Case by case</h2>
-  <p class="muted small">Each case was sent with both versions. ✓ means the answer matched the expected one. Largest cost increase first.</p>
+  {% if check.judge %}<p class="muted small">Each case was sent with both versions. A judge model (<code>{{check.judge.model}}</code>) marked each answer ✓ or ✗ against this rubric: “{{check.judge.rubric}}” That is a model's opinion; its reason is shown under each answer. Largest cost increase first.</p>
+  {% else %}<p class="muted small">Each case was sent with both versions. ✓ means the answer matched the expected one. Largest cost increase first.</p>{% endif %}
   {% set fold = check.cases|length > 6 %}
   <div class="table-wrap"><table>
   <tr><th>Case</th><th>Expected</th><th>Baseline answer</th><th>{{'Fix' if source else 'Candidate'}} answer</th><th>Output tokens</th><th>Cost</th></tr>
@@ -86,6 +87,7 @@
   {% if e %}<p>Mean latency {{'{:,.0f}'.format(e.mean_latency_ms.baseline|float)}} → {{'{:,.0f}'.format(e.mean_latency_ms.candidate|float)}} ms · p95 {{('{:,.0f}'.format(r.p95_latency_ms.candidate|float) ~ ' ms') if r.p95_latency_ms else 'unknown'}}. <span class="muted small">The first call to a local model can include loading it, which inflates the baseline's latency.</span></p>{% endif %}
   <p>Per case: model calls {{r.model_calls.baseline|num}} → {{r.model_calls.candidate|num}} · retries {{r.retries.baseline|num}} → {{r.retries.candidate|num}} · tool steps {{r.tool_steps.baseline|num}} → {{r.tool_steps.candidate|num}} · agent steps {{r.agent_steps.baseline|num}} → {{r.agent_steps.candidate|num}}</p>
   {% if e %}<p class="muted small">Assumptions: {{e.assumptions|join(' ')}}</p>{% endif %}
+  {% if check.judge and check.judge.spend %}{% set spend = check.judge.spend %}<p>Judge: {{spend.calls}} calls to <code>{{spend.model}}</code> cost {{'at least ' if not spend.complete}}<strong>{{spend.cost|usd}}</strong>. This is reported apart from the workload cost above and is not part of the verdict's cost limits.</p>{% endif %}
   <p><a href="/artifacts/{{r.baseline_id}}">Baseline run</a> · <a href="/artifacts/{{r.candidate_id}}">{{'Fix' if source else 'Candidate'}} run</a> · <a href="/api/v1/comparisons/{{check.id}}">JSON report</a></p>
 </details>
 {% endblock %}

@@ -12,16 +12,22 @@ from uuid import uuid4
 
 from pydantic import Field, model_validator
 
-from .execution import CaseInput, ExecutionLimits, ExperimentSpec
+from .execution import CaseInput, ExecutionLimits, ExperimentSpec, Judge
 from .investigation import AnalystSettings
 from .models import ComparisonPolicy, PricingCatalog, Schema
 
-PRESET_PATH = Path(__file__).resolve().parent.parent / "examples" / "support_triage.json"
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+# The starting points the New check page offers; the first is the default.
+PRESETS = {"support-triage": "support_triage.json", "refund-reply": "refund_reply.json"}
 
 
-def preset() -> dict:
-    """The demo suite: both prompts, the cases, limits and reference prices."""
-    return json.loads(PRESET_PATH.read_text())
+def preset(name: str = "support-triage") -> dict:
+    """A starting suite: both prompts, the cases, limits and reference prices."""
+    return json.loads((EXAMPLES / PRESETS.get(name, PRESETS["support-triage"])).read_text())
+
+
+def presets() -> list[dict]:
+    return [{"name": name, "title": preset(name)["title"]} for name in PRESETS]
 
 
 class CheckInput(Schema):
@@ -36,7 +42,8 @@ class CheckInput(Schema):
     baseline_prompt: str = Field(min_length=1, max_length=8000)
     candidate_prompt: str = Field(min_length=1, max_length=8000)
     cases: list[CaseInput] = Field(min_length=1, max_length=50)
-    evaluator: Literal["exact", "normalized"] = "normalized"
+    evaluator: Literal["exact", "normalized", "llm_judge"] = "normalized"
+    judge: Judge | None = None
     # 0 makes repeated runs comparable: differences come from the prompt, not from sampling.
     temperature: float | None = Field(default=0, ge=0, le=2)
     limits: ExecutionLimits = Field(default_factory=lambda: ExecutionLimits(
@@ -49,7 +56,9 @@ class CheckInput(Schema):
     def can_be_checked(self) -> "CheckInput":
         if self.baseline_name == self.candidate_name:
             raise ValueError("baseline and candidate need different names")
-        if any(not (case.expected_text or "").strip() for case in self.cases):
+        if (self.evaluator == "llm_judge") != (self.judge is not None):
+            raise ValueError("a judge is needed exactly when answers are judged by a model")
+        if self.judge is None and any(not (case.expected_text or "").strip() for case in self.cases):
             raise ValueError("every case needs an expected answer so quality can be checked")
         return self
 
@@ -89,7 +98,7 @@ def build_specs(data: CheckInput) -> tuple[ExperimentSpec, ExperimentSpec, Prici
     specs = [ExperimentSpec(
         suite_id=data.suite_id, name=variant_name, kind="prompt", provider=provider, model=name,
         system_prompt=prompt, evaluator=data.evaluator, temperature=data.temperature,
-        cases=data.cases, pricing=pricing, limits=data.limits,
+        cases=data.cases, pricing=pricing, limits=data.limits, judge=data.judge,
     ) for variant_name, prompt in ((data.baseline_name, data.baseline_prompt),
                                    (data.candidate_name, data.candidate_prompt))]
     return specs[0], specs[1], pricing

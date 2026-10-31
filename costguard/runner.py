@@ -102,7 +102,7 @@ def run_case(spec: ExperimentSpec, case, client: httpx.Client,
     return CaseExecution(
         case_id=case.case_id, status=status,
         latency_ms=Decimal(str(round(max(time.monotonic() - started - rate_limited, 0) * 1000, 4))),
-        calls=calls, steps=steps, quality_score=score.quality, evaluator=score.evaluator,
+        calls=calls, steps=steps, quality_score=score.quality, evaluator=score.evaluator, judgement=score.judgement,
         error=error, output=answer[:OUTPUT_LIMIT] if answer else None,
         reasoning=reasoning[:OUTPUT_LIMIT] if reasoning else None,
     )

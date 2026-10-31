@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from .models import PricingCatalog, Schema
 
@@ -52,6 +52,27 @@ class Charge(Schema):
     source: str = Field(min_length=1)
 
 
+class Judge(Schema):
+    """A model that scores answers against a rubric. Its calls are priced here, apart from the workload's."""
+    provider: str = Field(min_length=1, max_length=200)
+    model: str = Field(min_length=1, max_length=200)
+    rubric: str = Field(min_length=1, max_length=2000)
+    input_per_million_usd: Decimal = Field(ge=0)
+    output_per_million_usd: Decimal = Field(ge=0)
+    max_output_tokens: int = Field(default=300, ge=16, le=2000, strict=True)
+    timeout_seconds: int = Field(default=60, ge=1, le=300, strict=True)
+
+
+class Judgement(Schema):
+    """What a judge said about one answer, and what saying it cost. Never part of the workload cost."""
+    passed: bool | None  # None: the judge gave no usable verdict, so the answer has no score.
+    reason: str = Field(max_length=500)
+    model: str
+    input_tokens: int | None = Field(default=None, ge=0, strict=True)
+    output_tokens: int | None = Field(default=None, ge=0, strict=True)
+    cost_usd: Decimal | None = Field(default=None, ge=0)
+
+
 class CaseExecution(Schema):
     case_id: str = Field(min_length=1)
     status: Literal["ok", "error", "cancelled"]
@@ -65,6 +86,15 @@ class CaseExecution(Schema):
     output: str | None = Field(default=None, max_length=4000)
     # Hidden reasoning a model returned separately from its answer; billed as output tokens.
     reasoning: str | None = Field(default=None, max_length=4000)
+    judgement: Judgement | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_judgement(self, handler):
+        """Left out when unset, so artifacts saved before judges existed keep their digests."""
+        data = handler(self)
+        if data.get("judgement") is None:
+            data.pop("judgement", None)
+        return data
 
     @model_validator(mode="after")
     def structure_is_valid(self) -> "CaseExecution":
@@ -125,7 +155,9 @@ class ExperimentSpec(Schema):
     system_prompt: str = "Answer the user request accurately and briefly."
     # exact: case-insensitive match; normalized: also ignores surrounding punctuation,
     # quotes, markdown emphasis and repeated whitespace.
-    evaluator: Literal["exact", "normalized"] = "exact"
+    # llm_judge: a model scores each answer against `judge.rubric`.
+    evaluator: Literal["exact", "normalized", "llm_judge"] = "exact"
+    judge: Judge | None = None
     # None keeps the provider's default sampling; 0 makes repeated runs comparable.
     temperature: float | None = Field(default=None, ge=0, le=2)
     cases: list[CaseInput] = Field(min_length=1)
@@ -137,6 +169,8 @@ class ExperimentSpec(Schema):
         ids = [case.case_id for case in self.cases]
         if len(ids) != len(set(ids)):
             raise ValueError("case_id must be unique in a suite")
+        if (self.evaluator == "llm_judge") != (self.judge is not None):
+            raise ValueError("a judge is needed exactly when the evaluator is llm_judge")
         if (self.provider, self.model) not in self.pricing.as_map():
             raise ValueError("pricing is missing for the selected provider/model")
         return self

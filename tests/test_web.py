@@ -1,10 +1,12 @@
 import unittest
+from decimal import Decimal
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from costguard import service
 from costguard.economics import compare_artifacts
+from costguard.execution import ExperimentSpec, Judge, Judgement
 from costguard.models import ComparisonPolicy
 from main import app
 from tests.test_execution import artifact
@@ -116,6 +118,38 @@ class AnalystSectionTests(unittest.TestCase):
         page = self.page(legacy, [{"name": None, "job_id": "job-1", "report_id": "fix-1"}])
         self.assertIn("Revert the wording", page)
         self.assertIn("Fix passes", page)
+
+
+class JudgedPageTests(unittest.TestCase):
+    def test_the_new_check_form_offers_both_presets_and_the_judge_fields(self):
+        client = TestClient(app, base_url="http://localhost")
+        with patch("costguard.web.db.get_analyst_settings", return_value=None):
+            default, judged = client.get("/checks/new"), client.get("/checks/new?preset=refund-reply")
+        self.assertIn("Support triage", default.text)
+        self.assertIn("/checks/new?preset=refund-reply", default.text)
+        self.assertNotIn("The reply is polite", default.text)
+        self.assertIn("The reply is polite", judged.text)
+        self.assertIn('<option value="llm_judge" selected>', judged.text)
+
+    def test_a_judged_check_shows_the_rubric_each_reason_and_the_judges_cost(self):
+        saved, left, right = saved_check()
+        for side, passed in ((left, True), (right, False)):
+            side.cases[0].judgement = Judgement(passed=passed, reason="Missing the refund time.", model="test/judge",
+                                                cost_usd=Decimal("0.0001"))
+        source = ExperimentSpec(suite_id="suite", name="n", provider="test", model="echo", pricing=left.pricing,
+                                evaluator="llm_judge", cases=[{"case_id": "one", "prompt": "hi"}],
+                                judge=Judge(provider="test", model="judge", rubric="Mentions the refund time.",
+                                            input_per_million_usd=0, output_per_million_usd=0))
+        artifacts = {str(left.artifact_id): left, str(right.artifact_id): right}
+        with (patch("costguard.service.db.get_comparison", return_value=saved),
+              patch("costguard.service.db.get_artifact", side_effect=artifacts.get),
+              patch("costguard.service.db.source_experiment", return_value=source),
+              patch("costguard.service.db.related_investigations", return_value={"investigations": [], "source": None}),
+              patch("costguard.web.db.get_analyst_settings", return_value=None)):
+            page = TestClient(app, base_url="http://localhost").get("/checks/check-1").text
+        self.assertIn("Mentions the refund time.", page)
+        self.assertIn("Judge: Missing the refund time.", page)
+        self.assertIn("2 calls to <code>test/judge</code> cost <strong>$0.0002</strong>", page)
 
 
 class CheckListTests(unittest.TestCase):

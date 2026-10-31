@@ -1,7 +1,10 @@
 import unittest
 
-from costguard.diagnosis import (case_rows, changed_cases, describe_limits, format_usd, limit_rows,
+from decimal import Decimal
+
+from costguard.diagnosis import (case_rows, changed_cases, describe_limits, format_usd, judge_spend, limit_rows,
                                  mean_output_tokens, pick_winner, prompt_change)
+from costguard.execution import Judgement
 from costguard.economics import compare_artifacts
 from costguard.models import ComparisonPolicy
 from tests.test_execution import artifact
@@ -104,6 +107,17 @@ class FixSearchTests(unittest.TestCase):
         self.assertEqual(pick_winner([fix("a", "pass", "0.0001", 40), fix("b", "pass", "0.0001", 12)]), "b")
         self.assertIsNone(pick_winner([fix("a", "fail", "0.0001", 10), fix("b", None, None, 10)]))
         self.assertIsNone(pick_winner([]))
+
+
+class JudgeSpendTests(unittest.TestCase):
+    def test_judge_cost_is_summed_across_runs_and_flags_unknown_usage(self):
+        left, right = artifact("baseline"), artifact("candidate")
+        self.assertIsNone(judge_spend(left, right))
+        left.cases[0].judgement = Judgement(passed=True, reason="", model="test/judge", cost_usd=Decimal("0.002"))
+        right.cases[0].judgement = Judgement(passed=False, reason="", model="test/judge", cost_usd=Decimal("0.003"))
+        self.assertEqual(judge_spend(left, right), {"calls": 2, "model": "test/judge", "cost": Decimal("0.005"), "complete": True})
+        right.cases[0].judgement = Judgement(passed=None, reason="", model="test/judge")
+        self.assertFalse(judge_spend(left, right)["complete"])
 
 
 if __name__ == "__main__":

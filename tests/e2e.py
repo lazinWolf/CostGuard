@@ -199,6 +199,25 @@ def run(stale_id):
                           ).headers["location"] == f"/checks/{progress['report_id']}"
         assert Decimal(triage_report["report"]["economic"]["cost_per_request_usd"]["delta"]) > 0
         assert request(client, "GET", f"/api/v1/artifacts/{triage_ids[1]}")["cases"][0]["output"]
+        # A judged check: the mock judge passes any answer of at most 20 words and records its reason and cost.
+        refund = json.loads((ROOT / "examples/refund_reply.json").read_text())
+        judged = request(client, "POST", "/api/v1/checks", json={
+            "model": "costguard-mock/echo", "input_per_million_usd": "0.1", "output_per_million_usd": "0.4",
+            "suite_id": refund["suite_id"], "baseline_name": refund["baseline"]["name"],
+            "candidate_name": refund["candidate"]["name"], "baseline_prompt": refund["baseline"]["system_prompt"],
+            "candidate_prompt": refund["candidate"]["system_prompt"], "cases": refund["cases"],
+            "evaluator": "llm_judge", "policy": refund["policy"], "judge": {
+                "provider": "costguard-mock", "model": "judge", "rubric": refund["judge"]["rubric"],
+                "input_per_million_usd": "0.1", "output_per_million_usd": "0.4"}})
+        judged_done = wait_for(lambda: request(client, "GET", f"/api/v1/checks/running/{judged['candidate_job_id']}"),
+                               lambda item: item["state"] != "running", "judged check")
+        assert judged_done["state"] == "done", judged_done
+        judged_report = request(client, "GET", f"/api/v1/comparisons/{judged_done['report_id']}")
+        scored = request(client, "GET", f"/api/v1/artifacts/{judged_report['request']['candidate_id']}")["cases"]
+        assert all(case["quality_score"] == "1.0000" or Decimal(case["quality_score"]) == 1 for case in scored), scored
+        assert all(case["evaluator"] == "llm_judge:v1:costguard-mock/judge" for case in scored)
+        assert all(case["judgement"]["passed"] is True and case["judgement"]["cost_usd"] for case in scored), scored
+        assert "Judge:" in client.get(f"/checks/{judged_done['report_id']}").text
         assert client.post("/api/v1/jobs", json=baseline,
                            headers={"Origin": "http://evil.example"}).status_code == 403
         for page in ("/", "/checks/new", "/connections", f"/checks/{saved['id']}",
@@ -231,7 +250,7 @@ def run(stale_id):
         ], check=False, capture_output=True, text=True)
         assert result.returncode == 1, result.stderr
         assert json.loads(output.read_text())["status"] == "fail"
-    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, fix search, checks endpoint, UI, CLI, MCP")
+    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, fix search, checks endpoint, judged check, UI, CLI, MCP")
 
 
 if __name__ == "__main__":

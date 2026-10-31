@@ -10,6 +10,7 @@ import httpx
 from pydantic import ConfigDict, Field, ValidationError
 
 from . import diagnosis, ratelimit
+from .gateway import parse_json_reply
 from .economics import case_cost
 from .execution import ExecutionArtifact, ExperimentSpec
 from .models import Schema
@@ -143,15 +144,6 @@ def _decode_lists(arguments: dict) -> dict:
             except ValueError:
                 pass
     return decoded
-
-
-def _content_json(content: str | None):
-    """Parse a final structured answer, tolerating a surrounding Markdown code fence."""
-    text = (content or "").strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else ""
-        text = text.rsplit("```", 1)[0]
-    return json.loads(text)
 
 
 # A number in prose, not part of an identifier such as case-2, q4_K_M or llama3.2.
@@ -514,7 +506,7 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
                 # A structured final answer is accepted from compatible models too. Prose is
                 # never a conclusion; the analyst is reminded to finish through the tool.
                 try:
-                    conclusion = Conclusion.model_validate(_content_json(message.get("content")))
+                    conclusion = Conclusion.model_validate(parse_json_reply(message.get("content")))
                     result["conclusion"] = tools.finish(conclusion, run.seen_references)
                 except ValueError:
                     messages += [{"role": "assistant", "content": message.get("content") or ""},

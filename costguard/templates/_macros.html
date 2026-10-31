@@ -10,6 +10,7 @@
   <span class="answer {{'right' if right else 'wrong' if case.quality_score is not none else ''}}">{{'✓' if right else '✗' if case.quality_score is not none else ''}} {{text[:90]}}{{'…' if text|length > 90}}</span>
   {% if not text and case.reasoning %}<br><small class="answer wrong">No answer: the model used its whole output budget reasoning.</small>{% endif %}
   {% if text|length > 90 %}<details><summary class="small">full answer ({{text|length}} chars)</summary><div class="output">{{text}}</div></details>{% endif %}
+  {% if case.judgement %}<br><small class="muted">Judge: {{case.judgement.reason or 'no reason given'}}{% if case.judgement.passed is none %} <strong>(no verdict, so no score)</strong>{% endif %}</small>{% endif %}
   {% if case.reasoning %}<details><summary class="small">+ hidden reasoning ({{case.reasoning|length}} chars, billed)</summary><div class="output">{{case.reasoning}}</div></details>{% endif %}{% endif %}{% endmacro %}
 
 {# A warning for numbers an analyst quoted that its evidence does not contain. #}

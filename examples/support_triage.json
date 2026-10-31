@@ -1,4 +1,5 @@
 {
+  "title": "Support triage, matched by label",
   "suite_id": "support-triage",
   "description": "Route customer support messages to one of four queues. The candidate replaces a strict routing prompt with a friendlier, more thorough prompt.",
   "evaluator": "normalized",

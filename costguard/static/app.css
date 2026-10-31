@@ -116,6 +116,7 @@ tr.nested td:first-child::before { content: "↳"; color: var(--faint); margin-r
 .lead { font-size: 1.05rem; line-height: 1.55; }
 .findings { padding-left: 1.2rem; } .findings li { margin: .8rem 0; }
 .chip { display: inline-block; padding: .05rem .5rem; border-radius: 999px; background: var(--tint); color: var(--accent); text-decoration: none; font-size: .78rem; }
+.chip[aria-current] { background: var(--accent); color: #fff; }
 .check { font-size: .8rem; } .check.ok { color: var(--pass); } .check.warn { color: var(--warn); background: var(--warn-soft); padding: .05rem .45rem; border-radius: 6px; }
 .timeline { list-style: none; padding: 0; margin: 0; } .timeline li { position: relative; padding: .5rem 0 .5rem 1.6rem; border-left: 2px solid var(--line); margin-left: .5rem; }
 .timeline li::before { content: ""; position: absolute; left: -.45rem; top: .85rem; width: .8rem; height: .8rem; border-radius: 50%; background: var(--pass); }

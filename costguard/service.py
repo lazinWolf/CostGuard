@@ -241,6 +241,7 @@ class Check:
     breakdown: dict | None
     cases: list[dict]
     related: dict
+    judge: dict | None  # Who scored the answers, with what rubric and at what cost, when a model did.
 
     @property
     def report(self) -> dict:
@@ -259,10 +260,13 @@ def get_check(report_id: str) -> Check:
     candidate = db.get_artifact(saved["request"]["candidate_id"])
     source = db.source_experiment(str(candidate.artifact_id)) or db.source_experiment(str(baseline.artifact_id))
     inputs = {case.case_id: case for case in source.cases} if source else {}
+    judge = source.judge if source else None
     return Check(
         id=report_id, saved=saved, baseline=baseline, candidate=candidate,
         limits=diagnosis.limit_rows(saved["report"], saved["request"].get("policy")),
         breakdown=diagnosis.breakdown(saved["request"]["pricing"], baseline, candidate),
         cases=diagnosis.case_rows(saved["report"], baseline, candidate, inputs),
         related=db.related_investigations(report_id),
+        judge=judge and {"model": f"{judge.provider}/{judge.model}", "rubric": judge.rubric,
+                         "spend": diagnosis.judge_spend(baseline, candidate)},
     )

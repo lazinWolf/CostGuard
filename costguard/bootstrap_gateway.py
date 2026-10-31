@@ -46,7 +46,8 @@ def bootstrap():
         existing = client.get(f"{base}/api/providers/costguard-mock/keys")
         existing.raise_for_status()
         names = {key.get("name") for key in existing.json().get("keys") or []}
-        for name, model in (("costguard-mock-key", "echo"), ("costguard-analyst-key", "analyst")):
+        for name, model in (("costguard-mock-key", "echo"), ("costguard-analyst-key", "analyst"),
+                            ("costguard-judge-key", "judge")):
             if name in names:
                 continue
             key = client.post(f"{base}/api/providers/costguard-mock/keys", json={
