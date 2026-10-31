@@ -7,7 +7,7 @@ import time
 from decimal import Decimal
 from pathlib import Path
 
-from . import db, real_demo
+from . import db, real_demo, service
 from .economics import ComparisonDetails, compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .models import ComparisonPolicy, PricingCatalog
@@ -78,7 +78,6 @@ def _wait(getter, item_id: str, label: str) -> dict:
 
 
 def _demo(args) -> int:
-    from .api import ComparisonInput, InvestigationInput, compare_saved, start_investigation
     reference = real_demo.suite()["reference_pricing"]
     started = real_demo.start(real_demo.RealDemoInput(
         model=args.model,
@@ -94,15 +93,13 @@ def _demo(args) -> int:
         if job["state"] != "completed":
             raise ValueError(f"{side} run ended {job['state']}: {job['error']}")
         artifacts[side] = job["artifact_id"]
-    saved = compare_saved(ComparisonInput(
-        baseline_id=artifacts["baseline"], candidate_id=artifacts["candidate"],
-        pricing=started["pricing"], policy=started["policy"],
-        monthly_requests=started["monthly_requests"]))
+    saved = service.compare(artifacts["baseline"], artifacts["candidate"],
+                            PricingCatalog.model_validate(started["pricing"]),
+                            ComparisonPolicy.model_validate(started["policy"]), started["monthly_requests"])
     print(_markdown(ComparisonDetails.model_validate(saved["report"])))
     print(f"Report: http://localhost:8000/reports/{saved['id']}", flush=True)
     if args.investigate:
-        investigation_id = start_investigation(InvestigationInput(
-            report_id=saved["id"], question=args.question))["investigation_id"]
+        investigation_id = service.start_investigation(saved["id"], args.question)
         result = _wait(db.get_investigation, investigation_id, "investigation")
         conclusion = result["result"].get("conclusion")
         if conclusion:

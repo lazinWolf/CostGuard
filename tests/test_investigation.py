@@ -233,6 +233,15 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(result["state"], "completed", result["error"])
         self.assertEqual(result["conclusion"]["next_steps"], ["Run the proposal"])
 
+    def test_every_registered_tool_is_advertised_and_unknown_tools_are_refused(self):
+        from costguard.investigation import REGISTRY, TOOLS
+        self.assertEqual([tool["function"]["name"] for tool in TOOLS], list(REGISTRY))
+        with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
+                lambda request: response(tool_message("delete_everything", {})))) as client:
+            result = investigate("Find costs", settings(max_calls=1), evidence(), client)
+        self.assertEqual(result["events"][0]["tool"], "unknown")
+        self.assertIn("inspect_comparison", result["events"][0]["result"]["error"])
+
     def test_tool_schemas_omit_length_limits_but_validation_keeps_them(self):
         from costguard.investigation import TOOLS
         self.assertNotIn("maxLength", json.dumps(TOOLS))

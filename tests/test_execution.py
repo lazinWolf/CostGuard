@@ -7,6 +7,7 @@ from uuid import uuid4
 import httpx
 from pydantic import ValidationError
 
+from costguard.diagnosis import describe_limits, mean_output_tokens
 from costguard.economics import compare_artifacts
 from costguard.api import ScenarioInput, scenario
 from costguard.execution import ExecutionArtifact, ExperimentSpec
@@ -70,13 +71,17 @@ class ExecutionTests(unittest.TestCase):
         self.assertIn("| Mean latency (ms) | 100 | 100 | 0% |", text)
 
     def test_limits_are_described_in_plain_words(self):
-        from costguard.web import _limits
-        self.assertEqual(_limits({"max_cost_increase_percent": "20", "max_quality_drop": "0",
-                                  "min_candidate_quality_score": "0.85"}),
+        self.assertEqual(describe_limits({"max_cost_increase_percent": "20", "max_quality_drop": "0",
+                                          "min_candidate_quality_score": "0.85"}),
                          ["cost per request may rise by at most 20%",
                           "no fewer correct answers than the baseline", "at least 85% of answers correct"])
-        self.assertEqual(_limits({"max_quality_drop": "0.1"}),
+        self.assertEqual(describe_limits({"max_quality_drop": "0.1"}),
                          ["correct answers may fall at most 10 percentage points below the baseline"])
+
+    def test_mean_output_tokens_needs_usage_for_every_case(self):
+        run = artifact("one")
+        self.assertEqual(mean_output_tokens(run.cases), 0)
+        self.assertIsNone(mean_output_tokens(artifact("unknown", source="missing").cases))
 
     def test_scenario_rejects_failed_evidence(self):
         run = artifact("failed")

@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from costguard import ComparisonReport, ComparisonRequest, compare_workloads
+from costguard import ComparisonReport, ComparisonRequest, compare_workloads, service
 from costguard.api import router
 from costguard.web import router as web_router
 
@@ -21,6 +21,12 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(web_router)
+
+
+# Domain errors from the service layer become HTTP statuses here; the CLI and MCP map them their own way.
+for error, status in ((service.NotFound, 404), (service.Conflict, 409), (service.Unavailable, 503)):
+    app.add_exception_handler(error, lambda request, exc, status=status:
+                              JSONResponse({"detail": str(exc)}, status_code=status))
 
 
 @app.middleware("http")

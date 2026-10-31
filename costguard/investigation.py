@@ -2,6 +2,7 @@
 
 import json
 import re
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Callable
 
@@ -325,22 +326,68 @@ def _advertised(node):
     return node
 
 
-def _tool(name: str, description: str, schema: dict) -> dict:
-    return {"type": "function", "function": {
-        "name": name, "description": description, "parameters": _advertised(schema),
-    }}
+@dataclass
+class Run:
+    """What a tool may read or change while one investigation runs."""
+    tools: EvidenceTools
+    result: dict
+    seen_references: set[str] = field(default_factory=set)
+    reminded: bool = False  # A runnable comparison gets one reminder to propose before finishing.
 
 
-TOOLS = [
-    _tool("inspect_comparison", "Read measured economics, policies, configurations and available cases.",
-          {"type": "object", "properties": {}, "additionalProperties": False}),
-    _tool("inspect_case", "Inspect both sides of one case, including calls, steps and observed costs.",
-          CaseQuery.model_json_schema()),
-    _tool("propose_experiment", "Propose one new system prompt; preserve all cases, model, pricing and limits. Does not execute.",
-          PromptProposal.model_json_schema()),
-    _tool("finish_investigation", "Return findings grounded in inspected references, hypotheses and next steps.",
-          Conclusion.model_json_schema()),
-]
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    description: str
+    schema: dict
+    handler: Callable[[Run, dict], dict]
+
+    def advertised(self) -> dict:
+        return {"type": "function", "function": {
+            "name": self.name, "description": self.description, "parameters": _advertised(self.schema)}}
+
+
+REGISTRY: dict[str, Tool] = {}
+
+
+def tool(name: str, description: str, schema: dict):
+    """Register an analyst tool. Add a new capability here and it is advertised and dispatched."""
+    def register(handler: Callable[[Run, dict], dict]) -> Callable[[Run, dict], dict]:
+        REGISTRY[name] = Tool(name, description, schema, handler)
+        return handler
+    return register
+
+
+@tool("inspect_comparison", "Read measured economics, policies, configurations and available cases.",
+      {"type": "object", "properties": {}, "additionalProperties": False})
+def _inspect_comparison(run: Run, arguments: dict) -> dict:
+    return run.tools.overview()  # Takes no arguments; stray ones are ignored.
+
+
+@tool("inspect_case", "Inspect both sides of one case, including calls, steps and observed costs.",
+      CaseQuery.model_json_schema())
+def _inspect_case(run: Run, arguments: dict) -> dict:
+    return run.tools.inspect_case(CaseQuery.model_validate(arguments).case_id)
+
+
+@tool("propose_experiment", "Propose one new system prompt; preserve all cases, model, pricing and limits. Does not execute.",
+      PromptProposal.model_json_schema())
+def _propose_experiment(run: Run, arguments: dict) -> dict:
+    return run.tools.propose(PromptProposal.model_validate(arguments))
+
+
+@tool("finish_investigation", "Return findings grounded in inspected references, hypotheses and next steps.",
+      Conclusion.model_json_schema())
+def _finish_investigation(run: Run, arguments: dict) -> dict:
+    conclusion = Conclusion.model_validate(_decode_lists(arguments))
+    if run.tools.source is not None and run.tools.proposal is None and not run.reminded:
+        run.reminded = True
+        raise ToolError(PROPOSAL_REMINDER)
+    run.result["conclusion"] = run.tools.finish(conclusion, run.seen_references)
+    return {"status": "completed"}
+
+
+TOOLS = [registered.advertised() for registered in REGISTRY.values()]
 
 
 def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
@@ -353,7 +400,7 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
     messages = [{"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": question}]
     spent = Decimal("0")
-    reminded = False  # A runnable comparison gets one reminder to propose before finishing.
+    run = Run(tools, result)
     state, error = "interrupted", "Model-call limit reached before a valid conclusion"
     for _ in range(settings.max_calls):
         if not should_continue():
@@ -371,7 +418,7 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
                                 "output_tokens": None, "cost_usd": None})
         result.update(cost_usd=None, cost_known=False, known_cost_usd=str(spent))
         progress(result)
-        seen_references = tools.references.copy()
+        run.seen_references = tools.references.copy()
         try:
             response = ratelimit.post(client, "/v1/chat/completions", json={
                 "model": f"{settings.provider}/{settings.model}", "messages": messages,
@@ -430,7 +477,7 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
                 # never a conclusion; the analyst is reminded to finish through the tool.
                 try:
                     conclusion = Conclusion.model_validate(_content_json(message.get("content")))
-                    result["conclusion"] = tools.finish(conclusion, seen_references)
+                    result["conclusion"] = tools.finish(conclusion, run.seen_references)
                 except ValueError:
                     messages += [{"role": "assistant", "content": message.get("content") or ""},
                                  {"role": "user", "content": FINISH_REMINDER}]
@@ -451,22 +498,10 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
                 name = call["function"]["name"]
                 try:
                     arguments = _arguments(call["function"].get("arguments"))
-                    if name == "inspect_comparison":
-                        output = tools.overview()  # Takes no arguments; stray ones are ignored.
-                    elif name == "inspect_case":
-                        output = tools.inspect_case(CaseQuery.model_validate(arguments).case_id)
-                    elif name == "propose_experiment":
-                        output = tools.propose(PromptProposal.model_validate(arguments))
-                    elif name == "finish_investigation":
-                        conclusion = Conclusion.model_validate(_decode_lists(arguments))
-                        if tools.source is not None and tools.proposal is None and not reminded:
-                            reminded = True
-                            raise ToolError(PROPOSAL_REMINDER)
-                        result["conclusion"] = tools.finish(conclusion, seen_references)
-                        output = {"status": "completed"}
-                    else:
-                        raise ToolError("Tool is not allowed. Available tools: "
-                                        + ", ".join(tool["function"]["name"] for tool in TOOLS))
+                    registered = REGISTRY.get(name)
+                    if registered is None:
+                        raise ToolError("Tool is not allowed. Available tools: " + ", ".join(REGISTRY))
+                    output = registered.handler(run, arguments)
                 except ToolError as exc:
                     output = {"error": str(exc)}
                 except ValidationError as exc:
@@ -477,7 +512,7 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
                 except (TypeError, ValueError):
                     output = {"error": "Invalid tool request. Send a JSON object matching the declared schema."}
                 # Only validated arguments/results are persisted, not arbitrary tool text.
-                result["events"].append({"tool": name if name in {t['function']['name'] for t in TOOLS} else "unknown",
+                result["events"].append({"tool": name if name in REGISTRY else "unknown",
                                           "result": json.loads(_json(output))})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": _json(output)})
                 result["proposal"] = tools.proposal

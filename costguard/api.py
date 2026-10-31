@@ -1,15 +1,9 @@
 """Versioned API backed by the same analysis functions as the CLI and MCP server."""
 
-import json
-import os
-from pathlib import Path
-
-import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
-from . import db, real_demo
-from .economics import compare_artifacts, reprice
+from . import db, gateway, real_demo, service
 from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings, InvestigationInput
 from .models import ComparisonPolicy, PricingCatalog, Schema
@@ -31,22 +25,7 @@ def configure_analyst(settings: AnalystSettings):
 
 @router.post("/demo", status_code=202)
 def start_demo():
-    if os.environ.get("COSTGUARD_DEMO") != "1":
-        raise HTTPException(404, "Demo is disabled. Start Compose with COSTGUARD_DEMO=1 and --profile demo.")
-    from .bootstrap_gateway import bootstrap
-    try:
-        bootstrap()
-    except (httpx.HTTPError, RuntimeError) as exc:
-        raise HTTPException(503, "Demo gateway setup failed. Check that the demo profile is running.") from exc
-    root = Path(__file__).resolve().parent.parent
-    specs = [ExperimentSpec.model_validate_json((root / "examples" / f"experiment_{name}.json").read_text())
-             for name in ("baseline", "candidate")]
-    if db.get_analyst_settings() is None:
-        db.save_analyst_settings(AnalystSettings(provider="costguard-mock", model="analyst",
-            pricing_version="mock-demo", input_per_million_usd=0, output_per_million_usd=0))
-    return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
-            "pricing": specs[0].pricing.model_dump(mode="json"),
-            "policy": {"max_cost_increase_percent": 10, "min_candidate_quality_score": 1}}
+    return service.start_mock_demo()
 
 
 @router.post("/demo/real", status_code=202)
@@ -57,19 +36,7 @@ def start_real_demo(data: RealDemoInput):
 
 @router.post("/investigations", status_code=202)
 def start_investigation(data: InvestigationInput):
-    settings = db.get_analyst_settings()
-    if settings is None:
-        raise HTTPException(409, "Configure an analyst model on Connections first")
-    saved = db.get_comparison(data.report_id)
-    if saved is None:
-        raise HTTPException(404, "comparison not found")
-    source = db.source_experiment(saved["request"]["candidate_id"])
-    artifact = db.get_artifact(saved["request"]["candidate_id"])
-    if source and ({case.case_id for case in source.cases} != {case.case_id for case in artifact.cases}
-                   or source.suite_id != artifact.suite_id):
-        source = None
-    return {"investigation_id": db.create_investigation(data.report_id, data.question,
-            AnalystSettings.model_validate(settings), source)}
+    return {"investigation_id": service.start_investigation(data.report_id, data.question)}
 
 
 @router.get("/investigations")
@@ -94,18 +61,12 @@ def stop_investigation(investigation_id: str):
 
 @router.post("/investigations/{investigation_id}/run-proposal")
 def run_proposal(investigation_id: str):
-    try:
-        return {"job_id": db.run_investigation_proposal(investigation_id)}
-    except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
+    return {"job_id": service.run_proposal(investigation_id)}
 
 
 @router.post("/investigations/{investigation_id}/compare-proposal")
 def compare_proposal(investigation_id: str):
-    try:
-        return {"report_id": db.compare_investigation_proposal(investigation_id)}
-    except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
+    return {"report_id": service.compare_proposal(investigation_id)}
 
 
 class ComparisonInput(Schema):
@@ -137,18 +98,7 @@ def readiness():
 
 @router.get("/gateway")
 def gateway_status():
-    from .investigation_worker import gateway_headers
-    url = os.environ.get("GATEWAY_URL", "http://bifrost:8080")
-    try:
-        # The first listing can be slow while the gateway queries every provider.
-        with httpx.Client(timeout=10, headers=gateway_headers()) as client:
-            response = client.get(f"{url}/v1/models")
-            response.raise_for_status()
-            models = response.json().get("data", [])
-        return {"status": "connected", "models": [m.get("id") for m in models],
-                "settings_url": os.environ.get("BIFROST_PUBLIC_URL", "http://localhost:8080")}
-    except (httpx.HTTPError, ValueError):
-        return {"status": "unavailable", "models": [], "settings_url": os.environ.get("BIFROST_PUBLIC_URL", "http://localhost:8080")}
+    return gateway.status()
 
 
 @router.post("/suites")
@@ -174,7 +124,7 @@ def import_run(artifact: ExecutionArtifact):
     try:
         artifact_id, created = db.import_artifact(artifact)
     except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise service.Conflict(str(exc)) from exc
     return {"artifact_id": artifact_id, "created": created}
 
 
@@ -235,15 +185,7 @@ def cancel(job_id: str):
 
 @router.post("/comparisons")
 def compare_saved(data: ComparisonInput):
-    left = db.get_artifact(data.baseline_id)
-    right = db.get_artifact(data.candidate_id)
-    if left is None or right is None:
-        raise HTTPException(404, "baseline or candidate artifact not found")
-    report = compare_artifacts(left, right, data.pricing, data.policy, data.monthly_requests)
-    request_payload = json.loads(data.model_dump_json())
-    report_payload = json.loads(report.model_dump_json())
-    report_id = db.save_comparison(data.baseline_id, data.candidate_id, request_payload, report_payload)
-    return {"id": report_id, "report": report_payload}
+    return service.compare(data.baseline_id, data.candidate_id, data.pricing, data.policy, data.monthly_requests)
 
 
 @router.get("/comparisons")
@@ -261,7 +203,4 @@ def comparison(report_id: str):
 
 @router.post("/scenarios")
 def scenario(data: ScenarioInput):
-    saved = db.get_artifact(data.artifact_id)
-    if saved is None:
-        raise HTTPException(404, "artifact not found")
-    return reprice(saved, data.pricing, data.monthly_requests)
+    return service.reprice_run(data.artifact_id, data.pricing, data.monthly_requests)

@@ -1,18 +1,10 @@
 """Run persisted investigations without replaying a lost or cancelled lease."""
 
-import os
 import threading
 
-import httpx
-
-from . import db
+from . import db, gateway
 from .execution import ExperimentSpec
 from .investigation import AnalystSettings, EvidenceTools, investigate
-
-
-def gateway_headers() -> dict:
-    key = os.environ.get("BIFROST_VIRTUAL_KEY", "")
-    return {"Content-Type": "application/json", **({"x-bf-vk": key} if key else {})}
 
 
 def execute_investigation(investigation_id: str) -> None:
@@ -33,8 +25,7 @@ def execute_investigation(investigation_id: str) -> None:
         right = db.get_artifact(saved["request"]["candidate_id"])
         source = row["request"].get("source_spec")
         tools = EvidenceTools(saved, left, right, ExperimentSpec.model_validate(source) if source else None)
-        with httpx.Client(base_url=os.environ.get("GATEWAY_URL", "http://bifrost:8080"),
-                          headers=gateway_headers()) as client:
+        with gateway.client() as client:
             result = investigate(row["request"]["question"],
                 AnalystSettings.model_validate(row["request"]["analyst"]), tools, client,
                 progress=lambda result: db.update_investigation(investigation_id, result=result),

@@ -1,7 +1,5 @@
 """Sequential experiment runner. Network calls are never replayed after a lost lease."""
 
-import json
-import os
 import threading
 import time
 from decimal import Decimal
@@ -9,30 +7,15 @@ from uuid import uuid4
 
 import httpx
 
-from . import db, ratelimit
+from . import db, evaluators, events, gateway, ratelimit
 from .economics import case_cost
 from .execution import Call, CaseExecution, ExecutionArtifact, ExperimentSpec, Step
-from .investigation_worker import execute_investigation, gateway_headers
+from .investigation_worker import execute_investigation
 
 
 OUTPUT_LIMIT = 2000
 # Request errors worth another attempt; other 4xx responses will not change on retry.
 RETRYABLE_STATUS = {408, 409, 429}
-
-
-def _normalize(text: str) -> str:
-    return " ".join(text.split()).strip(" .,;:!?\"'`*_").casefold()
-
-
-def _quality(answer: str, expected: str | None,
-             evaluator: str = "exact") -> tuple[Decimal | None, str | None]:
-    if expected is None:
-        return None, None
-    if evaluator == "normalized":
-        passed = _normalize(answer) == _normalize(expected)
-    else:
-        passed = answer.strip().casefold() == expected.strip().casefold()
-    return Decimal("1") if passed else Decimal("0"), f"{evaluator}:v1"
 
 
 def run_case(spec: ExperimentSpec, case, client: httpx.Client,
@@ -114,13 +97,12 @@ def run_case(spec: ExperimentSpec, case, client: httpx.Client,
                     break
             steps[-1].latency_ms = sum((call.latency_ms for call in calls), Decimal("0"))
             steps[-1].status = "ok" if error is None else "error"
-    quality, evaluator = (_quality(answer, case.expected_text, spec.evaluator)
-                          if error is None else (None, None))
+    score = evaluators.evaluate(spec, case, answer, client) if error is None else evaluators.NO_SCORE
     status = "cancelled" if error == "cancelled" else "error" if error else "ok"
     return CaseExecution(
         case_id=case.case_id, status=status,
         latency_ms=Decimal(str(round(max(time.monotonic() - started - rate_limited, 0) * 1000, 4))),
-        calls=calls, steps=steps, quality_score=quality, evaluator=evaluator,
+        calls=calls, steps=steps, quality_score=score.quality, evaluator=score.evaluator,
         error=error, output=answer[:OUTPUT_LIMIT] if answer else None,
         reasoning=reasoning[:OUTPUT_LIMIT] if reasoning else None,
     )
@@ -141,8 +123,7 @@ def _summary(case: CaseExecution, case_input, cost: Decimal | None) -> dict:
             "quality": None if case.quality_score is None else float(case.quality_score)}
 
 
-def execute_job(job_id: str, spec: ExperimentSpec, gateway_url: str | None = None) -> str:
-    url = gateway_url or os.environ.get("GATEWAY_URL", "http://bifrost:8080")
+def execute_job(job_id: str, spec: ExperimentSpec) -> str:
     cases: list[CaseExecution] = []
     summaries: list[dict] = []
     spent = Decimal("0")
@@ -157,7 +138,7 @@ def execute_job(job_id: str, spec: ExperimentSpec, gateway_url: str | None = Non
     heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
     heartbeat_thread.start()
     try:
-        with httpx.Client(base_url=url, headers=gateway_headers()) as client:
+        with gateway.client() as client:
             for input_case in spec.cases:
                 job = db.get_job(job_id)
                 if job is None or job["state"] == "cancelled":
@@ -203,6 +184,8 @@ def execute_job(job_id: str, spec: ExperimentSpec, gateway_url: str | None = Non
                       progress=len(cases), artifact_id=artifact_id)
     elif job:
         db.update_job(job_id, progress=len(cases), artifact_id=artifact_id)
+    events.emit("run.finished", job_id=job_id, artifact_id=artifact_id, name=spec.name,
+                model=f"{spec.provider}/{spec.model}", cases=len(cases), cost_usd=format(spent, "f"))
     return job_id
 
 
@@ -215,6 +198,7 @@ def _next_job() -> bool:
         execute_job(job_id, spec)
     except Exception as exc:
         db.update_job(job_id, state="failed", error=f"runner error: {type(exc).__name__}")
+        events.emit("runner.error", job_id=job_id, type=type(exc).__name__)
     return True
 
 
@@ -233,7 +217,7 @@ def work_forever() -> None:
                 order.reverse()  # Alternate so neither queue starves the other.
                 continue
         except Exception as exc:
-            print(json.dumps({"event": "runner_error", "type": type(exc).__name__}), flush=True)
+            events.emit("runner.error", type=type(exc).__name__)
         time.sleep(1)
 
 
