@@ -6,8 +6,8 @@ import httpx
 
 from costguard.economics import compare_artifacts
 from costguard.execution import ExperimentSpec
-from costguard.investigation import (AnalystSettings, Conclusion, EvidenceTools, PromptProposal,
-                                     evidence_numbers, investigate, unsupported_numbers)
+from costguard.investigation import (DIGEST_HEADER, AnalystSettings, Conclusion, EvidenceTools, FixProposals,
+                                     evidence_numbers, investigate, proposals_of, unsupported_numbers)
 from demo.mock_provider import analyst_message
 from tests.test_execution import artifact
 
@@ -30,6 +30,11 @@ def evidence(with_source=True):
         system_prompt="Longer candidate instructions.",
         cases=[{"case_id": "one", "prompt": "hello", "expected_text": "hello"}], pricing=left.pricing)
     return EvidenceTools(saved, left, right, source if with_source else None)
+
+
+def fixes(*prompts):
+    return FixProposals.model_validate({"fixes": [{"hypothesis": f"Try {prompt}", "system_prompt": prompt}
+                                                   for prompt in prompts]})
 
 
 def response(message, usage=True):
@@ -59,12 +64,14 @@ class InvestigationTests(unittest.TestCase):
             result = investigate("Find the regression", settings(), tools, client,
                                  progress=lambda value: receipts.append(json.loads(json.dumps(value))))
         self.assertEqual(result["state"], "completed")
-        self.assertEqual(len(result["calls"]), 3)
-        self.assertEqual(Decimal(result["cost_usd"]), Decimal("0.006"))
+        self.assertEqual(len(result["calls"]), 2)  # The digest replaces the analyst's first read.
+        self.assertEqual(Decimal(result["cost_usd"]), Decimal("0.004"))
         self.assertEqual([event["tool"] for event in result["events"]],
-                         ["inspect_comparison", "inspect_case", "propose_experiment", "finish_investigation"])
-        self.assertEqual(result["proposal"]["spec"]["system_prompt"], "Answer briefly.")
-        self.assertEqual(result["proposal"]["spec"]["name"], "analyst-fix-1")
+                         ["inspect_case", "propose_fixes", "finish_investigation"])
+        self.assertEqual([proposal["spec"]["system_prompt"] for proposal in result["proposals"]],
+                         ["Answer briefly.", "Answer briefly. Be brief."])
+        self.assertEqual([proposal["spec"]["name"] for proposal in result["proposals"]],
+                         ["analyst-fix-1a", "analyst-fix-1b"])
         # A usage receipt is saved before any tool result from that response.
         self.assertEqual(receipts[0]["events"], [])
         self.assertEqual(len(receipts[0]["calls"]), 1)
@@ -76,7 +83,7 @@ class InvestigationTests(unittest.TestCase):
         requests = []
         def handle(request):
             requests.append(request)
-            return response(tool_message("inspect_comparison", {}))
+            return response(tool_message("inspect_case", {"case_id": "one"}))
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(handle)) as client:
             result = investigate("Find costs", settings(stop_after_usd="0.001"), evidence(), client)
         self.assertEqual(len(requests), 1)
@@ -87,7 +94,7 @@ class InvestigationTests(unittest.TestCase):
         requests = []
         def handle(request):
             requests.append(request)
-            return response(tool_message("inspect_comparison", {}), usage=False)
+            return response(tool_message("inspect_case", {"case_id": "one"}), usage=False)
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(handle)) as client:
             result = investigate("Find costs", settings(), evidence(), client)
         self.assertEqual(len(requests), 1)
@@ -118,8 +125,9 @@ class InvestigationTests(unittest.TestCase):
 
     def test_fixes_of_fixes_are_numbered(self):
         from costguard.investigation import fix_name
-        self.assertEqual([fix_name("helpful-prompt"), fix_name("analyst-fix-1"), fix_name("analyst-fix-9")],
-                         ["analyst-fix-1", "analyst-fix-2", "analyst-fix-10"])
+        self.assertEqual([fix_name("helpful-prompt"), fix_name("analyst-fix-1"), fix_name("analyst-fix-9"),
+                          fix_name("analyst-fix-1b"), fix_name("helpful-prompt", "a")],
+                         ["analyst-fix-1", "analyst-fix-2", "analyst-fix-10", "analyst-fix-2", "analyst-fix-1a"])
 
     def test_tools_cannot_access_unrelated_cases(self):
         with self.assertRaisesRegex(ValueError, "not present"):
@@ -128,39 +136,88 @@ class InvestigationTests(unittest.TestCase):
     def test_runnable_comparison_is_reminded_once_to_propose(self):
         finish = {"summary": "Cost rose", "findings": [{"text": "Input grew", "evidence": ["comparison"]}]}
         for replies, proposed in (
-                ([("inspect_comparison", {}), ("finish_investigation", finish),
-                  ("propose_experiment", {"system_prompt": "Answer briefly.", "rationale": "Shorter"}),
+                ([("inspect_case", {"case_id": "one"}), ("finish_investigation", finish),
+                  ("propose_fixes", {"fixes": [{"hypothesis": "Shorter", "system_prompt": "Answer briefly."}]}),
                   ("finish_investigation", finish)], True),
-                ([("inspect_comparison", {}), ("finish_investigation", finish),
+                ([("inspect_case", {"case_id": "one"}), ("finish_investigation", finish),
                   ("finish_investigation", finish)], False)):
             replies = iter(replies)
             with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
                     lambda request: response(tool_message(*next(replies))))) as client:
                 result = investigate("Find costs", settings(), evidence(), client)
             self.assertEqual(result["state"], "completed", result["error"])
-            self.assertIn("propose_experiment", result["events"][1]["result"]["error"])
-            self.assertEqual(result["proposal"] is not None, proposed)
+            self.assertIn("propose_fixes", result["events"][1]["result"]["error"])
+            self.assertEqual(bool(result["proposals"]), proposed)
 
     def test_same_turn_read_and_finish_cannot_claim_unseen_results(self):
-        read = tool_message("inspect_comparison", {})["tool_calls"][0]
+        tools = evidence()
+        for side in (tools.baseline, tools.candidate):  # More cases than the digest shows.
+            side.cases = [side.cases[0].model_copy(update={"case_id": f"case-{index}"}) for index in range(6)]
+        read = tool_message("inspect_case", {"case_id": "case-5"})["tool_calls"][0]
         finish = tool_message("finish_investigation", {"summary": "Claim",
-            "findings": [{"text": "Unseen evidence claim", "evidence": ["comparison"]}]})["tool_calls"][0]
+            "findings": [{"text": "Unseen evidence claim", "evidence": ["case:case-5"]}]})["tool_calls"][0]
         finish["id"] = "finish"
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
                 lambda request: response({"role": "assistant", "tool_calls": [read, finish]}))) as client:
-            result = investigate("Find costs", settings(max_calls=1), evidence(), client)
+            result = investigate("Find costs", settings(max_calls=1), tools, client)
         self.assertEqual(result["state"], "interrupted")
         self.assertIsNone(result["conclusion"])
+
+    def test_the_analyst_starts_from_a_digest_and_may_cite_it_at_once(self):
+        sent = []
+        finish = tool_message("finish_investigation", {"summary": "Cost rose",
+            "findings": [{"text": "Output grew", "evidence": ["comparison", "case:one"]}]})
+        with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
+                lambda request: sent.append(json.loads(request.content)) or response(finish))) as client:
+            result = investigate("Find costs", settings(max_calls=1), evidence(with_source=False), client)
+        self.assertEqual(result["state"], "completed", result["error"])
+        first = sent[0]["messages"][1]["content"]
+        self.assertTrue(first.startswith("Find costs"))
+        self.assertEqual(json.loads(first.split(DIGEST_HEADER, 1)[1]), result["digest"])
+
+    def test_digest_holds_what_the_analyst_would_otherwise_look_up(self):
+        tools = evidence()
+        tools.candidate.cases[0].output = "A long explanation"
+        digest = tools.digest()
+        self.assertEqual(digest["status"], "not_evaluated")
+        self.assertEqual(digest["prompt_change"], {"baseline_words": 2, "candidate_words": 3,
+                                                   "words_added": 3, "words_removed": 2})
+        self.assertEqual(digest["cost_drivers"]["rows"][0]["kind"], "input")
+        case = digest["changed_cases"][0]
+        self.assertEqual((case["case_id"], case["message"], case["expected"]), ("one", "hello", "hello"))
+        self.assertEqual(case["candidate"]["output"], "A long explanation")
+        self.assertEqual(case["candidate"]["quality_score"], "1")
+        self.assertTrue({"comparison", "case:one"} <= tools.references)
 
     def test_prompt_proposal_preserves_cases_prices_and_limits(self):
         tools = evidence()
         original = tools.source.model_dump(mode="json")
-        tools.propose(PromptProposal(system_prompt="Answer briefly.", rationale="Measure fewer input tokens"))
-        proposed = tools.proposal["spec"]
+        tools.propose(fixes("Answer briefly."))
+        proposed = tools.proposals[0]["spec"]
         for field in ("cases", "suite_id", "provider", "model", "pricing", "limits", "kind"):
             self.assertEqual(proposed[field], original[field])
-        with self.assertRaisesRegex(ValueError, "One prompt"):
-            tools.propose(PromptProposal(system_prompt="Another prompt", rationale="Another test"))
+        with self.assertRaisesRegex(ValueError, "once per investigation"):
+            tools.propose(fixes("Another prompt"))
+
+    def test_several_fixes_are_named_apart_and_accepted_all_or_none(self):
+        tools = evidence()
+        answer = tools.propose(fixes("Answer briefly.", "Reply with the label only."))
+        self.assertEqual([fix["name"] for fix in answer["fixes"]], ["analyst-fix-1a", "analyst-fix-1b"])
+        self.assertEqual([proposal["hypothesis"] for proposal in tools.proposals],
+                         ["Try Answer briefly.", "Try Reply with the label only."])
+        for rejected, message in ((fixes("Same", "Same"), "identical"),
+                                  (fixes("Fine", "Longer candidate instructions."), "unchanged")):
+            other = evidence()
+            with self.assertRaisesRegex(ValueError, message):
+                other.propose(rejected)
+            self.assertEqual(other.proposals, [])
+        with self.assertRaises(ValueError):
+            FixProposals.model_validate({"fixes": [{"hypothesis": "h", "system_prompt": f"p{n}"} for n in range(4)]})
+
+    def test_investigations_before_v4_still_read_as_one_fix(self):
+        legacy = {"proposal": {"spec": {"name": "analyst-fix-1"}, "rationale": "Revert the wording"}}
+        self.assertEqual(proposals_of(legacy), [{"spec": {"name": "analyst-fix-1"}, "hypothesis": "Revert the wording"}])
+        self.assertEqual(proposals_of({"proposal": None, "proposals": []}), [])
 
     def test_overview_states_the_limits_a_proposal_is_judged_by(self):
         tools = evidence()
@@ -173,7 +230,7 @@ class InvestigationTests(unittest.TestCase):
         tools = evidence(with_source=False)
         self.assertFalse(tools.overview()["can_propose_prompt_experiment"])
         with self.assertRaisesRegex(ValueError, "no executable"):
-            tools.propose(PromptProposal(system_prompt="Answer briefly.", rationale="Measure"))
+            tools.propose(fixes("Answer briefly."))
 
     def test_unavailable_tool_is_not_executed(self):
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(
@@ -182,7 +239,7 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(result["state"], "interrupted")
         self.assertEqual(result["events"][0]["tool"], "unknown")
         self.assertIn("error", result["events"][0]["result"])
-        self.assertIsNone(result["proposal"])
+        self.assertEqual(result["proposals"], [])
 
     def test_gateway_failure_is_not_retried_or_treated_as_free(self):
         requests = []
@@ -200,7 +257,7 @@ class InvestigationTests(unittest.TestCase):
         active = [True]
         def handle(request):
             active[0] = False
-            return response(tool_message("inspect_comparison", {}))
+            return response(tool_message("inspect_case", {"case_id": "one"}))
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(handle)) as client:
             result = investigate("Find costs", settings(), evidence(), client,
                                  should_continue=lambda: active[0])
@@ -214,7 +271,7 @@ class InvestigationTests(unittest.TestCase):
             body = json.loads(request.content)
             if not any(message["role"] == "tool" for message in body["messages"]):
                 return response({"role": "assistant", "tool_calls": [{"id": "read", "type": "function",
-                    "function": {"name": "inspect_comparison", "arguments": {}}}]})
+                    "function": {"name": "inspect_case", "arguments": {"case_id": "one"}}}]})
             conclusion = {"summary": "Cost rose", "findings": [{"text": "Input grew", "evidence": ["comparison"]}]}
             return response({"role": "assistant", "content": "```json\n" + json.dumps(conclusion) + "\n```"})
         with httpx.Client(base_url="http://gateway", transport=httpx.MockTransport(handle)) as client:
@@ -223,7 +280,7 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(result["conclusion"]["summary"], "Cost rose")
 
     def test_list_fields_sent_as_json_strings_are_decoded(self):
-        replies = iter([tool_message("inspect_comparison", {"unused": True}),
+        replies = iter([tool_message("inspect_case", {"case_id": "one"}),
                         tool_message("finish_investigation", {"summary": "Cost rose",
                             "findings": json.dumps([{"text": "Input grew", "evidence": ["comparison"]}]),
                             "next_steps": "[\"Run the proposal\"]"})])
@@ -240,7 +297,7 @@ class InvestigationTests(unittest.TestCase):
                 lambda request: response(tool_message("delete_everything", {})))) as client:
             result = investigate("Find costs", settings(max_calls=1), evidence(), client)
         self.assertEqual(result["events"][0]["tool"], "unknown")
-        self.assertIn("inspect_comparison", result["events"][0]["result"]["error"])
+        self.assertIn("inspect_case", result["events"][0]["result"]["error"])
 
     def test_tool_schemas_omit_length_limits_but_validation_keeps_them(self):
         from costguard.investigation import TOOLS

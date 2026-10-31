@@ -141,25 +141,20 @@ def run(stale_id):
         else:
             raise AssertionError("Investigation did not complete")
         assert investigation["result"]["conclusion"]["findings"]
-        assert len(investigation["result"]["calls"]) == 3, investigation
-        assert investigation["result"]["proposal"]
-        assert investigation["proposal_job_id"] is None  # Proposal alone makes no workload calls.
+        assert len(investigation["result"]["calls"]) == 2, investigation  # The digest saves the first read.
+        assert investigation["result"]["digest"]["changed_cases"]
+        assert len(investigation["result"]["proposals"]) == 2
+        assert investigation["fixes"] == []  # Proposals alone make no workload calls.
         path = f"/api/v1/investigations/{investigation_id}"
-        proposed_job = request(client, "POST", path + "/run-proposal")["job_id"]
-        assert request(client, "POST", path + "/run-proposal")["job_id"] == proposed_job
-        deadline = time.monotonic() + 90
-        while time.monotonic() < deadline:
-            job = request(client, "GET", f"/api/v1/jobs/{proposed_job}")
-            if job["state"] == "completed":
-                break
-            assert job["state"] in {"queued", "running"}, job
-            time.sleep(0.25)
-        else:
-            raise AssertionError("Proposed experiment did not complete")
-        outcome_id = request(client, "POST", path + "/compare-proposal")["report_id"]
-        assert request(client, "POST", path + "/compare-proposal")["report_id"] == outcome_id
-        outcome = request(client, "GET", f"/api/v1/comparisons/{outcome_id}")
-        assert outcome["report"]["status"] == "pass", outcome
+        fixes = request(client, "POST", path + "/test-fixes")["fixes"]
+        assert request(client, "POST", path + "/test-fixes")["fixes"][0]["job_id"] == fixes[0]["job_id"]
+        # The runner compares each fix with the original baseline by itself.
+        measured = wait_for(lambda: request(client, "GET", path + "/fixes")["fixes"],
+                            lambda items: all(item["state"] == "measured" for item in items), "fix comparisons")
+        # Restoring the baseline prompt passes; the extra words of the second fix break the cost limit.
+        assert [item["status"] for item in measured] == ["pass", "fail"], measured
+        assert [item["winner"] for item in measured] == [True, False], measured
+        outcome = request(client, "GET", f"/api/v1/comparisons/{measured[0]['report_id']}")
         assert outcome["request"]["baseline_id"] == baseline_id
         assert Decimal(outcome["report"]["economic"]["quality_score"]["delta"]) == 0
         # Simulate a lost worker during a model call. The runner must not replay it or
@@ -236,7 +231,7 @@ def run(stale_id):
         ], check=False, capture_output=True, text=True)
         assert result.returncode == 1, result.stderr
         assert json.loads(output.read_text())["status"] == "fail"
-    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, proposed experiment, real-demo endpoint, UI, CLI, MCP")
+    print("CostGuard demo integration passed: gateway, jobs, artifacts, comparison, policy, scenario, investigation, fix search, checks endpoint, UI, CLI, MCP")
 
 
 if __name__ == "__main__":

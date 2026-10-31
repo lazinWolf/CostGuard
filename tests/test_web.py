@@ -59,6 +59,65 @@ class CheckPageTests(unittest.TestCase):
             self.assertEqual(client.get("/investigations/i1").headers["location"], "/checks/abc#explain")
 
 
+def fix_spec(name, prompt):
+    return {"name": name, "suite_id": "suite", "kind": "prompt", "provider": "test", "model": "echo",
+            "system_prompt": prompt, "pricing": artifact("x").pricing.model_dump(mode="json"),
+            "cases": [{"case_id": "one", "prompt": "hi", "expected_text": "hi"}]}
+
+
+class AnalystSectionTests(unittest.TestCase):
+    """The 'Explain and fix' section at each stage of the fix search."""
+
+    def page(self, result, fixes, state="completed", reports=None):
+        row = {"id": "inv-1", "report_id": "check-1", "state": state, "error": None, "fixes": fixes, "result": {
+            "calls": [], "events": [], "cost_usd": "0", "cost_known": True, "conclusion": None, **result},
+            "request": {"analyst": {"provider": "test", "model": "analyst", "max_calls": 5}, "source_spec": {"x": 1}}}
+        measured = {"fix-1": {"report": {"status": "pass", "baseline_case_count": 8, "economic": {
+            "cost_per_request_usd": {"candidate": "0.0001"}, "quality_score": {"candidate": "1"}}}}}
+        saved, left, right = saved_check()
+        artifacts = {str(left.artifact_id): left, str(right.artifact_id): right}
+        related = {"investigations": [{"id": "inv-1", "state": state}], "source": None}
+        with (patch("costguard.service.db.get_comparison", side_effect=lambda report_id: measured.get(report_id, saved)),
+              patch("costguard.service.db.get_artifact", side_effect=artifacts.get),
+              patch("costguard.service.db.source_experiment", return_value=None),
+              patch("costguard.service.db.related_investigations", return_value=related),
+              patch("costguard.service.db.get_job", return_value={"id": "job-1", "state": "completed", "progress": 1, "total": 1}),
+              patch("costguard.web.db.get_investigation", return_value=row),
+              patch("costguard.web.db.get_analyst_settings", return_value={"provider": "test", "model": "analyst", "max_calls": 5})):
+            response = TestClient(app, base_url="http://localhost").get("/checks/check-1")
+        self.assertEqual(response.status_code, 200, response.text[:300])
+        return response.text
+
+    proposals = [{"spec": fix_spec("analyst-fix-1a", "Answer briefly."), "hypothesis": "Go back to the short wording"},
+                 {"spec": fix_spec("analyst-fix-1b", "Answer in one word."), "hypothesis": "Force a one-word answer"}]
+
+    def test_proposed_fixes_wait_for_one_click_to_test_them_all(self):
+        page = self.page({"proposals": self.proposals}, [])
+        self.assertIn("Test the 2 fixes (2 model calls)", page)
+        self.assertIn("Go back to the short wording", page)
+        self.assertIn("Not run yet.", page)
+        self.assertNotIn('<span class="chip">best fix</span>', page)
+
+    def test_the_cheapest_passing_fix_is_announced_and_linked(self):
+        page = self.page({"proposals": self.proposals[:1]},
+                         [{"name": "analyst-fix-1", "job_id": "job-1", "report_id": "fix-1"}])
+        self.assertIn("Fix passes", page)
+        self.assertIn('<span class="chip">best fix</span>', page)
+        self.assertIn('href="/checks/fix-1"', page)
+        self.assertNotIn("Test the", page)
+
+    def test_a_fix_still_running_is_shown_as_testing(self):
+        page = self.page({"proposals": self.proposals},
+                         [{"name": "a", "job_id": "job-1", "report_id": None}, {"name": "b", "job_id": "job-1", "report_id": None}])
+        self.assertIn("Testing the fixes", page)
+
+    def test_an_investigation_before_v4_renders_its_single_proposal(self):
+        legacy = {"proposal": {"spec": fix_spec("analyst-fix-1", "Answer briefly."), "rationale": "Revert the wording"}}
+        page = self.page(legacy, [{"name": None, "job_id": "job-1", "report_id": "fix-1"}])
+        self.assertIn("Revert the wording", page)
+        self.assertIn("Fix passes", page)
+
+
 class CheckListTests(unittest.TestCase):
     def test_fixes_nest_under_the_check_they_fix_in_order(self):
         row = lambda name: {"id": name, "quality_baseline": "0.75", "quality_candidate": "0.25", "quality_cases": 8}

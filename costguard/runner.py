@@ -201,9 +201,9 @@ def _next_job() -> bool:
         events.emit("runner.error", job_id=job_id, type=type(exc).__name__)
         return True
     try:
-        service.finish_check(job_id)  # Compares the pair when this was the second run of a check.
+        service.job_finished(job_id)  # Compares a finished check or fix with its baseline.
     except Exception as exc:
-        events.emit("check.error", job_id=job_id, type=type(exc).__name__)
+        events.emit("followup.error", job_id=job_id, type=type(exc).__name__)
     return True
 
 

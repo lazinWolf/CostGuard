@@ -17,7 +17,7 @@ import httpx
 from . import checks, db, diagnosis, events
 from .economics import compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
-from .investigation import AnalystSettings
+from .investigation import AnalystSettings, proposals_of
 from .models import ComparisonPolicy, PricingCatalog
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -76,20 +76,68 @@ def start_investigation(report_id: str, question: str) -> str:
     return db.create_investigation(report_id, question, AnalystSettings.model_validate(settings), source)
 
 
-def run_proposal(investigation_id: str) -> str:
-    """Queue the analyst's proposed experiment (once). Returns the job ID."""
+def test_fixes(investigation_id: str) -> list[dict]:
+    """Queue every fix the analyst proposed. The runner measures each against the original baseline."""
+    row = db.get_investigation(investigation_id)
+    if row is None:
+        raise NotFound("investigation not found")
+    specs = [ExperimentSpec.model_validate(proposal["spec"]) for proposal in proposals_of(row["result"])]
     try:
-        return db.run_investigation_proposal(investigation_id)
+        db.create_fix_jobs(investigation_id, specs)
     except ValueError as exc:
         raise Conflict(str(exc)) from exc
+    if not row["fixes"]:
+        events.emit("fixes.started", investigation_id=investigation_id, fixes=len(specs))
+    return fix_rows(db.get_investigation(investigation_id))
 
 
-def compare_proposal(investigation_id: str) -> str:
-    """Compare the finished proposal run with the original baseline. Returns the report ID."""
-    try:
-        return db.compare_investigation_proposal(investigation_id)
-    except ValueError as exc:
-        raise Conflict(str(exc)) from exc
+def finish_fix(job_id: str) -> str | None:
+    """When `job_id` was a fix run, compare it with the baseline of the check that was investigated,
+    under that check's prices and limits. Returns the new report ID; a fix is compared once."""
+    found = db.find_fix(job_id)
+    job = db.get_job(job_id)
+    if found is None or found["report_id"] or job["state"] != "completed" or not job["artifact_id"]:
+        return None
+    request = db.get_comparison(found["check_id"])["request"]
+    saved = compare(request["baseline_id"], job["artifact_id"], PricingCatalog.model_validate(request["pricing"]),
+                    ComparisonPolicy.model_validate(request["policy"]) if request.get("policy") else None,
+                    request.get("monthly_requests"))
+    db.set_fix_report(found["investigation_id"], job_id, saved["id"])
+    events.emit("fix.measured", investigation_id=found["investigation_id"], job_id=job_id,
+                report_id=saved["id"], status=saved["report"]["status"])
+    return saved["id"]
+
+
+def job_finished(job_id: str) -> None:
+    """Everything that may follow a finished run. Called by the runner after every job."""
+    finish_check(job_id)
+    finish_fix(job_id)
+
+
+def fix_rows(row: dict) -> list[dict]:
+    """Each fix an investigation proposed, with how far its measurement is. One is marked the winner."""
+    proposals, recorded = proposals_of(row["result"]), row["fixes"]
+    rows = []
+    for index, proposal in enumerate(proposals):
+        spec, fix = proposal["spec"], recorded[index] if index < len(recorded) else None
+        job = db.get_job(fix["job_id"]) if fix else None
+        saved = db.get_comparison(fix["report_id"]) if fix and fix["report_id"] else None
+        report = saved["report"] if saved else {}
+        economic = report.get("economic") or {}
+        rows.append({
+            "label": f"Fix {'ABC'[index]}" if len(proposals) > 1 else "Fix", "name": spec["name"],
+            "hypothesis": proposal["hypothesis"], "words": len(spec["system_prompt"].split()),
+            "state": "measured" if saved else "failed" if job and job["state"] in RUN_FAILED
+                     else "running" if job else "proposed",
+            "job_id": job and job["id"], "progress": job and job["progress"], "total": job and job["total"],
+            "report_id": fix and fix["report_id"], "status": report.get("status"),
+            "cost": (economic.get("cost_per_request_usd") or {}).get("candidate"),
+            "quality": (economic.get("quality_score") or {}).get("candidate"),
+            "cases": report.get("baseline_case_count"), "winner": False})
+    winner = diagnosis.pick_winner(rows)
+    for fix in rows:
+        fix["winner"] = fix["name"] == winner
+    return rows
 
 
 def start_mock_demo() -> dict:

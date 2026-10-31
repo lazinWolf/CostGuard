@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, select, text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, aliased, defer, mapped_column
 
@@ -91,6 +91,8 @@ class InvestigationRow(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     proposal_job_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("jobs.id"), nullable=True)
     proposal_report_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("comparisons.id"), nullable=True)
+    # The fixes being measured: {name, job_id, report_id}. proposal_* is how investigations before v4 recorded one.
+    fixes: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -235,9 +237,8 @@ def list_comparisons(limit: int | None = None) -> list[dict]:
 def fix_parents() -> dict[str, str]:
     """For each comparison that measured an analyst's fix: the comparison that was investigated."""
     with session_scope() as session:
-        rows = session.execute(select(InvestigationRow.proposal_report_id, InvestigationRow.report_id)
-                               .where(InvestigationRow.proposal_report_id.is_not(None))).all()
-        return {fix: parent for fix, parent in rows}
+        rows = session.scalars(select(InvestigationRow).options(defer(InvestigationRow.result))).all()
+        return {fix["report_id"]: row.report_id for row in rows for fix in _fixes(row) if fix["report_id"]}
 
 
 def create_job(spec: ExperimentSpec) -> str:
@@ -363,11 +364,17 @@ def create_investigation(report_id: str, question: str, analyst, source=None) ->
     return investigation_id
 
 
+def _fixes(row: InvestigationRow) -> list[dict]:
+    """The fixes being measured, whichever way they were recorded."""
+    if row.fixes or not row.proposal_job_id:
+        return row.fixes
+    return [{"name": None, "job_id": row.proposal_job_id, "report_id": row.proposal_report_id}]
+
+
 def _investigation_view(row: InvestigationRow) -> dict:
     return {"id": row.id, "report_id": row.report_id, "state": row.state,
             "request": row.request, "result": row.result, "error": row.error,
-            "proposal_job_id": row.proposal_job_id, "proposal_report_id": row.proposal_report_id,
-            "created_at": row.created_at.isoformat()}
+            "fixes": _fixes(row), "created_at": row.created_at.isoformat()}
 
 
 def get_investigation(investigation_id: str) -> dict | None:
@@ -392,7 +399,8 @@ def related_investigations(report_id: str) -> dict:
                                .where(InvestigationRow.report_id == report_id)
                                .order_by(InvestigationRow.created_at.desc())).all()
         source = session.scalars(select(InvestigationRow).options(defer(InvestigationRow.result))
-                                 .where(InvestigationRow.proposal_report_id == report_id)).first()
+                                 .where(or_(InvestigationRow.proposal_report_id == report_id,
+                                            InvestigationRow.fixes.contains([{"report_id": report_id}])))).first()
         view = lambda row: {"id": row.id, "state": row.state, "question": row.request["question"],
                             "analyst": f"{row.request['analyst']['provider']}/{row.request['analyst']['model']}",
                             "report_id": row.report_id}
@@ -439,48 +447,37 @@ def cancel_investigation(investigation_id: str) -> bool:
         return True
 
 
-def run_investigation_proposal(investigation_id: str) -> str:
-    """The explicit execution action is idempotent to avoid duplicate paid jobs."""
+def create_fix_jobs(investigation_id: str, specs: list[ExperimentSpec]) -> list[dict]:
+    """Queue a run for each proposed fix. Idempotent, so a double click cannot start paid runs twice."""
     with session_scope() as session:
         row = session.get(InvestigationRow, investigation_id, with_for_update=True)
         if row is None:
             raise ValueError("investigation not found")
-        if row.proposal_job_id:
-            return row.proposal_job_id
-        if row.state != "completed" or not row.result.get("proposal"):
+        if _fixes(row):
+            return _fixes(row)
+        if row.state != "completed" or not specs:
             raise ValueError("completed investigation has no executable proposal")
-        spec = ExperimentSpec.model_validate(row.result["proposal"]["spec"])
-        job_id = str(uuid4())
-        session.add(JobRow(id=job_id, state="queued", spec=_json(spec), total=len(spec.cases)))
-        session.flush()
-        row.proposal_job_id = job_id
-        return job_id
+        fixes = []
+        for spec in specs:
+            job_id = str(uuid4())
+            session.add(JobRow(id=job_id, state="queued", spec=_json(spec), total=len(spec.cases)))
+            fixes.append({"name": spec.name, "job_id": job_id, "report_id": None})
+        row.fixes = fixes
+        return fixes
 
 
-def compare_investigation_proposal(investigation_id: str) -> str:
-    """Compare the proposed run against the original baseline and original policy."""
-    from .economics import compare_artifacts
-    from .models import ComparisonPolicy, PricingCatalog
+def find_fix(job_id: str) -> dict | None:
+    """The investigation that queued this job as one of its fixes, and the check it investigated."""
+    with session_scope() as session:
+        row = session.scalars(select(InvestigationRow).options(defer(InvestigationRow.result))
+                              .where(InvestigationRow.fixes.contains([{"job_id": job_id}]))).first()
+        if row is None:
+            return None
+        fix = next(fix for fix in row.fixes if fix["job_id"] == job_id)
+        return {"investigation_id": row.id, "check_id": row.report_id, "report_id": fix["report_id"]}
+
+
+def set_fix_report(investigation_id: str, job_id: str, report_id: str) -> None:
     with session_scope() as session:
         row = session.get(InvestigationRow, investigation_id, with_for_update=True)
-        if row is None:
-            raise ValueError("investigation not found")
-        if row.proposal_report_id:
-            return row.proposal_report_id
-        job = session.get(JobRow, row.proposal_job_id) if row.proposal_job_id else None
-        if job is None or not job.artifact_id or job.state != "completed":
-            raise ValueError("proposed experiment has not completed")
-        original = session.get(ComparisonRow, row.report_id)
-        request = dict(original.request_payload)
-        request["candidate_id"] = job.artifact_id
-        left = ExecutionArtifact.model_validate(session.get(ArtifactRow, original.baseline_id).payload)
-        right = ExecutionArtifact.model_validate(session.get(ArtifactRow, job.artifact_id).payload)
-        report = compare_artifacts(left, right, PricingCatalog.model_validate(request["pricing"]),
-            ComparisonPolicy.model_validate(request["policy"]) if request.get("policy") else None,
-            request.get("monthly_requests"))
-        report_id = str(uuid4())
-        session.add(ComparisonRow(id=report_id, baseline_id=original.baseline_id,
-            candidate_id=job.artifact_id, request_payload=request, report=_json(report)))
-        session.flush()
-        row.proposal_report_id = report_id
-        return report_id
+        row.fixes = [{**fix, "report_id": report_id} if fix["job_id"] == job_id else fix for fix in row.fixes]

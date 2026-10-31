@@ -64,14 +64,18 @@ def stop_investigation(investigation_id: str):
     return {"state": "cancelled"}
 
 
-@router.post("/investigations/{investigation_id}/run-proposal")
-def run_proposal(investigation_id: str):
-    return {"job_id": service.run_proposal(investigation_id)}
+@router.post("/investigations/{investigation_id}/test-fixes", status_code=202)
+def test_fixes(investigation_id: str):
+    """Run every fix the analyst proposed; each is compared with the original baseline when it finishes."""
+    return {"fixes": service.test_fixes(investigation_id)}
 
 
-@router.post("/investigations/{investigation_id}/compare-proposal")
-def compare_proposal(investigation_id: str):
-    return {"report_id": service.compare_proposal(investigation_id)}
+@router.get("/investigations/{investigation_id}/fixes")
+def fixes(investigation_id: str):
+    result = db.get_investigation(investigation_id)
+    if result is None:
+        raise HTTPException(404, "investigation not found")
+    return {"fixes": service.fix_rows(result)}
 
 
 class ComparisonInput(Schema):

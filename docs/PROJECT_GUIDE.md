@@ -11,10 +11,10 @@ AI application costs change with prompts, models, context, retries and execution
 - **Execution:** queued experiments, observed usage/latency/outputs, exact or normalized label quality checks, a bounded tool example, and versioned JSON evidence. Imports and an opt-in Python recorder support application-supplied evidence.
 - **Analysis:** paired-case cost/latency, model/case contributors, execution metrics, monthly projections and policy gates. Missing usage, failed cases or incomplete quality coverage make comparisons inconclusive.
 - **Intelligence:** a separate analyst inspects evidence through bounded tools, provides referenced findings and proposes prompt experiments; its spend is recorded separately. CostGuard marks any number in a finding that is absent from the evidence the analyst inspected.
-- **Controlled improvement:** explicit approval executes a proposal, then measures its outcome against the original baseline and policy.
+- **Controlled improvement:** the analyst starts from a digest of the evidence CostGuard already computed and proposes up to three prompts. One click runs them; the runner measures each against the original baseline and policy, and the cheapest one that passes is highlighted.
 - **Real-model demo:** a support-triage suite run on any gateway model (local Ollama or cloud) from the overview page or `python -m costguard demo`.
 - **What-if pricing:** each report reprices both observed runs under other per-token prices and monthly traffic, holding behavior fixed.
-- **Verification:** 87 unit tests and the mock end-to-end workflow pass.
+- **Verification:** 101 unit tests and the mock end-to-end workflow pass.
 - **DevOps:** GitHub Actions builds the image, runs the unit tests, a cost gate on recorded runs (the verbose candidate is blocked, the fix passes, both shown in the job summary) and the end-to-end workflow on the Compose stack.
 
 ## Components and responsibilities

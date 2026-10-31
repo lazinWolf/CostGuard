@@ -12,36 +12,42 @@ def models():
     return {"object": "list", "data": [{"id": model, "object": "model"} for model in ("echo", "analyst")]}
 
 
+DIGEST_HEADER = "Evidence from CostGuard (JSON):\n"
+
+
 def analyst_message(messages: list) -> dict:
-    """A scripted fixture for exercising tools; it does not emulate LLM reasoning."""
+    """A scripted fixture for exercising tools; it does not emulate LLM reasoning.
+
+    It reads the evidence CostGuard put in the first user message, as a real analyst does."""
+    first = next(message["content"] for message in messages if message.get("role") == "user")
+    digest = json.loads(first.split(DIGEST_HEADER, 1)[1])
     outputs = [json.loads(message["content"]) for message in messages if message.get("role") == "tool"]
-    overview = next((item for item in outputs if item.get("evidence_ref") == "comparison"), None)
 
     def call(name, arguments, index=1):
         return {"id": f"mock-{len(outputs)}-{index}", "type": "function",
                 "function": {"name": name, "arguments": json.dumps(arguments)}}
 
-    if overview is None:
-        return {"role": "assistant", "content": None, "tool_calls": [call("inspect_comparison", {})]}
-    if len(outputs) == 1:
+    if not outputs:
         calls = []
-        if overview["case_ids"]:
-            calls.append(call("inspect_case", {"case_id": overview["case_ids"][0]}))
-        prompt = overview["configuration"]["baseline"]["system_prompt"] or "Answer accurately and briefly."
-        if (overview["can_propose_prompt_experiment"]
-                and prompt != overview["configuration"]["candidate"]["system_prompt"]):
-            calls.append(call("propose_experiment", {"system_prompt": prompt,
-                "rationale": "Measure whether returning to the baseline instructions removes additional input cost while preserving the explicit case evaluator."}, 2))
+        if digest["changed_cases"]:
+            calls.append(call("inspect_case", {"case_id": digest["changed_cases"][0]["case_id"]}))
+        prompt = digest["configuration"]["baseline"]["system_prompt"] or "Answer accurately and briefly."
+        if (digest["can_propose_prompt_experiment"]
+                and prompt != digest["configuration"]["candidate"]["system_prompt"]):
+            calls.append(call("propose_fixes", {"fixes": [
+                {"hypothesis": "Returning to the baseline instructions removes the extra input cost.", "system_prompt": prompt},
+                {"hypothesis": "The baseline instructions plus a brevity reminder keep answers short.",
+                 "system_prompt": prompt + " Be brief."}]}, 2))
         if calls:
             return {"role": "assistant", "content": None, "tool_calls": calls}
-    metrics = overview.get("metrics")
+    metrics = digest.get("metrics")
     text = (f"Measured cost per request changed by {metrics['cost_per_request_usd']['delta_percent']}%. "
-            f"The calculated policy status is {overview['policy']['status']}.") if metrics else "The comparison is inconclusive; inspect the evidence notes before deciding."
+            f"The calculated policy status is {digest['policy']['status']}.") if metrics else "The comparison is inconclusive; inspect the evidence notes before deciding."
     return {"role": "assistant", "content": None, "tool_calls": [call("finish_investigation", {
         "summary": "Scripted demo investigation using the supplied economic evidence.",
         "findings": [{"text": text, "evidence": ["comparison"]}],
-        "hypotheses": ["A prompt change can alter input usage; the proposed run is needed to measure its impact."],
-        "next_steps": ["Run the proposed experiment if available, compare it against the original baseline, and inspect paired quality."],
+        "hypotheses": ["A prompt change can alter input usage; the proposed runs are needed to measure its impact."],
+        "next_steps": ["Test the proposed fixes if available, compare them against the original baseline, and inspect paired quality."],
     })]}
 
 

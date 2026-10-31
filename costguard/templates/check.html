@@ -123,12 +123,11 @@ const action=name=>busy(async()=>{await api('investigations/'+investigationId+'/
 reloadOnChange(async()=>{const d=await api('investigations/'+investigationId);return [d.state,(d.result.events||[]).length];},
   [{{item.state|tojson}},{{item.result.get('events', [])|length}}]);
 {% endif %}
-{% if analyst.proposal_job and analyst.proposal_job.state in ['queued', 'running'] %}
-// Compare the finished fix with the original baseline, then show the result.
-(async function pollJob(){try{const d=await api('jobs/'+{{analyst.proposal_job.id|tojson}});
-  if(d.state==='completed'){await api('investigations/'+investigationId+'/compare-proposal',{});return location.reload();}
-  if(d.state!=={{analyst.proposal_job.state|tojson}}||d.progress!=={{analyst.proposal_job.progress}})return location.reload();}catch(e){}
-  setTimeout(pollJob,1500);})();
+const testFixes=()=>busy(async()=>{await api('investigations/'+investigationId+'/test-fixes',{});location.reload();});
+{% if analyst.testing %}
+// The runner compares each fix as it finishes; reload when one does.
+reloadOnChange(async()=>(await api('investigations/'+investigationId+'/fixes')).fixes.map(f=>[f.state,f.progress,f.report_id]),
+  {{analyst.fixes_key|tojson}});
 {% endif %}{% endif %}
 // Show every case row, also when a link points at one that is folded away.
 const revealCases=()=>{document.querySelectorAll('tr.more').forEach(row=>row.hidden=false);document.getElementById('show-all')?.remove();};

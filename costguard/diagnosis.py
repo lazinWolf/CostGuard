@@ -5,6 +5,7 @@ read from here, so one fact is worded one way everywhere.
 """
 
 from decimal import Decimal
+from difflib import SequenceMatcher
 from typing import Callable, NamedTuple
 
 
@@ -207,6 +208,54 @@ def case_rows(report: dict, baseline, candidate, inputs: dict | None = None) -> 
              "before_tokens": output_tokens(left.get(case_id)),
              "after_tokens": output_tokens(right.get(case_id)),
              "input": (inputs or {}).get(case_id)} for case_id in order]
+
+
+def _lost_quality(row: dict) -> bool:
+    before, after = row["before"], row["after"]
+    scores = [getattr(case, "quality_score", None) for case in (before, after)]
+    return None not in scores and scores[1] < scores[0]
+
+
+def _cost_increase(row: dict) -> Decimal:
+    return Decimal(str(row["cost"]["delta"])) if row["cost"] else Decimal(0)
+
+
+def changed_cases(rows: list[dict], limit: int = 4, excerpt: int = 300) -> list[dict]:
+    """The cases worth reading first: the ones that lost correctness, then the ones whose cost grew most.
+
+    `rows` come from `case_rows`. Each case carries the message, the expected answer and both outputs, so a
+    reader (or the analyst) can see what changed without opening the cases one by one.
+    """
+    ranked = sorted(rows, key=lambda row: (not _lost_quality(row), -_cost_increase(row)))
+
+    def side(case, tokens):
+        return None if case is None else {"output": (case.output or "")[:excerpt], "output_tokens": tokens,
+                                          "quality_score": case.quality_score, "status": case.status}
+
+    return [{"case_id": row["case_id"], "lost_correctness": _lost_quality(row), "cost_usd": row["cost"],
+             "message": row["input"].prompt[:excerpt] if row["input"] else None,
+             "expected": row["input"].expected_text if row["input"] else None,
+             "baseline": side(row["before"], row["before_tokens"]),
+             "candidate": side(row["after"], row["after_tokens"])} for row in ranked[:limit]]
+
+
+def prompt_change(before: str, after: str) -> dict:
+    """How the system prompt grew or shrank, in words: every prompt word is paid on every request."""
+    left, right = before.split(), after.split()
+    kept = sum(block.size for block in SequenceMatcher(None, left, right, autojunk=False).get_matching_blocks())
+    return {"baseline_words": len(left), "candidate_words": len(right),
+            "words_added": len(right) - kept, "words_removed": len(left) - kept}
+
+
+def pick_winner(fixes: list[dict]) -> str | None:
+    """The name of the cheapest fix that passes every limit; ties go to the shorter prompt.
+
+    Deterministic on purpose: the analyst proposes, measurements and this rule decide. None when no fix passes.
+    """
+    passing = [fix for fix in fixes if fix.get("status") == "pass" and fix.get("cost") is not None]
+    if not passing:
+        return None
+    return min(passing, key=lambda fix: (Decimal(str(fix["cost"])), fix["words"]))["name"]
 
 
 def correct_answers(baseline, candidate, cases: int | None) -> str | None:

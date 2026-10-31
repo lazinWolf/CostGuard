@@ -1,6 +1,7 @@
 import unittest
 
-from costguard.diagnosis import describe_limits, format_usd, limit_rows, mean_output_tokens
+from costguard.diagnosis import (case_rows, changed_cases, describe_limits, format_usd, limit_rows,
+                                 mean_output_tokens, pick_winner, prompt_change)
 from costguard.economics import compare_artifacts
 from costguard.models import ComparisonPolicy
 from tests.test_execution import artifact
@@ -69,6 +70,40 @@ class FormattingTests(unittest.TestCase):
     def test_mean_output_tokens_needs_usage_for_every_case(self):
         self.assertEqual(mean_output_tokens(artifact("one").cases), 0)
         self.assertIsNone(mean_output_tokens(artifact("unknown", source="missing").cases))
+
+
+class FixSearchTests(unittest.TestCase):
+    def rows(self):
+        """Three cases: one lost its answer, one just got dearer, one is unchanged."""
+        left, right = artifact("baseline"), artifact("candidate", 2000)
+        template = left.cases[0]
+        for side, scores, costs in ((left, ("1", "1", "1"), ("100", "100", "100")),
+                                    (right, ("0", "1", "1"), ("120", "400", "100"))):
+            side.cases = [template.model_copy(update={"case_id": name, "quality_score": score, "output": f"{name} says {score}"})
+                          for name, score in zip("abc", scores)]
+        costs = [{"case_id": name, "cost_usd": {"baseline": "1", "candidate": "2", "delta": delta}}
+                 for name, delta in zip("abc", ("1", "5", "0"))]
+        report = {"economic": {"case_costs": costs}}
+        return case_rows(report, left, right)
+
+    def test_cases_that_lost_correctness_come_first_then_the_dearest(self):
+        shown = changed_cases(self.rows(), limit=2)
+        self.assertEqual([(case["case_id"], case["lost_correctness"]) for case in shown], [("a", True), ("b", False)])
+        self.assertEqual(shown[0]["baseline"]["output"], "a says 1")
+        self.assertEqual(shown[0]["candidate"]["output"], "a says 0")
+
+    def test_prompt_change_counts_words_added_and_removed(self):
+        self.assertEqual(prompt_change("Be brief and exact.", "Be brief, polite and exact. Thank them."),
+                         {"baseline_words": 4, "candidate_words": 7, "words_added": 4, "words_removed": 1})
+        self.assertEqual(prompt_change("same words", "same words")["words_added"], 0)
+
+    def test_the_winner_is_the_cheapest_fix_that_passes(self):
+        fix = lambda name, status, cost, words: {"name": name, "status": status, "cost": cost, "words": words}
+        self.assertEqual(pick_winner([fix("a", "pass", "0.0002", 10), fix("b", "pass", "0.0001", 40),
+                                      fix("c", "fail", "0.00001", 5)]), "b")
+        self.assertEqual(pick_winner([fix("a", "pass", "0.0001", 40), fix("b", "pass", "0.0001", 12)]), "b")
+        self.assertIsNone(pick_winner([fix("a", "fail", "0.0001", 10), fix("b", None, None, 10)]))
+        self.assertIsNone(pick_winner([]))
 
 
 if __name__ == "__main__":

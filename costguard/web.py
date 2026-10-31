@@ -10,8 +10,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from . import checks, db, gateway, service
-from .diagnosis import format_usd, headline, mean_output_tokens, percent
-from .investigation import NUMBER, PROPOSAL_REMINDER, evidence_numbers, unsupported_numbers
+from .diagnosis import format_usd, headline, percent
+from .investigation import NUMBER, PROPOSAL_REMINDER, evidence_numbers, proposals_of, unsupported_numbers
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -99,32 +99,31 @@ def _analyst_view(check: service.Check) -> dict:
         view["steps"] = ["current", "", ""]
         return view
     row = db.get_investigation(investigations[0]["id"])
-    outcome = db.get_comparison(row["proposal_report_id"]) if row["proposal_report_id"] else None
-    variants = [_variant("Baseline", check.baseline, check.report, "baseline"),
-                _variant("This version", check.candidate, check.report, "candidate")]
-    if outcome:
-        variants.append(_variant("Proposed fix", db.get_artifact(outcome["request"]["candidate_id"]),
-                                 outcome["report"], "candidate"))
-    proposal = row["result"].get("proposal")
+    proposals = proposals_of(row["result"])
+    fixes = service.fix_rows(row)
+    measured = bool(fixes) and all(fix["state"] in {"measured", "failed"} for fix in fixes)
+    winner = next((fix for fix in fixes if fix["winner"]), None)
     view.update(
         investigation=row, active=row["state"] in {"queued", "running"},
-        answer=_answer(row), timeline=_timeline(row["result"]), proposal=proposal,
-        proposal_job=db.get_job(row["proposal_job_id"]) if row["proposal_job_id"] else None,
-        variants=variants, outcome=variants[2] if outcome else None,
+        answer=_answer(row), timeline=_timeline(row["result"]), proposals=proposals, fixes=fixes,
+        testing=bool(row["fixes"]) and not measured, measured=measured, winner=winner,
+        fixes_key=[[fix["state"], fix["progress"], fix["report_id"]] for fix in fixes],
+        scoreboard=[_variant("Baseline", check.baseline, check.report, "baseline"),
+                    _variant("This version", check.candidate, check.report, "candidate")],
         steps=["done" if row["state"] == "completed" else "current",
-               "done" if outcome else "current" if proposal and row["state"] == "completed" else "",
-               "done" if outcome else ""])
+               "done" if measured else "current" if proposals and row["state"] == "completed" else "",
+               "done" if winner else ""])
     return view
 
 
 def _variant(label: str, artifact, report: dict, side: str) -> dict:
-    """One row of the baseline / this version / fix summary."""
+    """One row of the baseline / this version summary."""
     economic = report.get("economic") or {}
     return {"label": label, "id": str(artifact.artifact_id), "name": artifact.name,
             "cost": (economic.get("cost_per_request_usd") or {}).get(side),
             "quality": (economic.get("quality_score") or {}).get(side), "cases": len(artifact.cases),
             "status": report["status"] if side == "candidate" else None,
-            "output_tokens": mean_output_tokens(artifact.cases)}
+            "words": len(artifact.configuration.get("system_prompt", "").split())}
 
 
 def _answer(row: dict) -> dict | None:
@@ -133,8 +132,8 @@ def _answer(row: dict) -> dict | None:
     conclusion = result.get("conclusion")
     if not conclusion:
         return None
-    numbers = evidence_numbers([event.get("result") for event in result.get("events", [])
-                                if event.get("tool") in {"inspect_comparison", "inspect_case"}])
+    numbers = evidence_numbers([result.get("digest")] + [event.get("result") for event in result.get("events", [])
+                                                         if event.get("tool") in {"inspect_comparison", "inspect_case"}])
     report = f"/checks/{row['report_id']}"
 
     def link(reference: str) -> dict:
@@ -157,7 +156,8 @@ def _answer(row: dict) -> dict | None:
 
 TOOL_STEPS = {
     "inspect_comparison": "Read the comparison: costs, quality, policy and configurations",
-    "propose_experiment": "Proposed a new system prompt to test",
+    "propose_fixes": "Proposed system prompts to test",
+    "propose_experiment": "Proposed a new system prompt to test",  # Before v4 the analyst proposed one.
     "finish_investigation": "Wrote its findings",
     "format_reminder": "Answered in prose instead of a tool call; CostGuard asked it to use the tools",
     "unknown": "Asked for a tool that does not exist",
@@ -206,8 +206,9 @@ def _saw(tool: str, output: dict) -> str | None:
             answer = (case.get("output") or "").strip().replace("\n", " ")
             sides.append(f"{side} {mark} “{answer[:50]}{'…' if len(answer) > 50 else ''}” ({tokens} output tokens)")
         return "Saw " + " · ".join(sides)
-    if tool == "propose_experiment":
-        return f"Prompt of {len((output.get('system_prompt') or '').split())} words, to run on the same {output.get('cases')} cases"
+    if tool in {"propose_fixes", "propose_experiment"}:
+        words = [len((fix.get("system_prompt") or "").split()) for fix in output.get("fixes", [output])]
+        return f"{len(words)} prompt{'' if len(words) == 1 else 's'} of {' / '.join(map(str, words))} words, to run on the same {output.get('cases')} cases"
     return None
 
 
