@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from . import checks, db, diagnosis, events, recorded
+from . import checks, db, diagnosis, events, recorded, telemetry
 from .economics import compare_artifacts, reprice
 from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings, proposals_of
@@ -41,7 +41,9 @@ def compare(baseline_id: str, candidate_id: str, pricing: PricingCatalog,
     left, right = db.get_artifact(baseline_id), db.get_artifact(candidate_id)
     if left is None or right is None:
         raise NotFound("baseline or candidate artifact not found")
-    report = compare_artifacts(left, right, pricing, policy, monthly_requests)
+    with telemetry.span("compare", **{"costguard.baseline_id": baseline_id, "costguard.candidate_id": candidate_id}) as current:
+        report = compare_artifacts(left, right, pricing, policy, monthly_requests)
+        current.set_attribute("costguard.verdict", report.status)
     request_payload = {"baseline_id": baseline_id, "candidate_id": candidate_id,
                        "pricing": pricing.model_dump(mode="json"),
                        "policy": policy.model_dump(mode="json") if policy else None,

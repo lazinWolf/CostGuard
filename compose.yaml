@@ -27,6 +27,10 @@ services:
       BIFROST_PUBLIC_URL: http://localhost:${BIFROST_PORT:-8080}
       BIFROST_VIRTUAL_KEY: ${BIFROST_VIRTUAL_KEY:-}
       COSTGUARD_DEMO: ${COSTGUARD_DEMO:-0}
+      # Telemetry is off until an OTLP endpoint is set (see the observability profile).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-10000}
+      GRAFANA_PUBLIC_URL: http://localhost:${GRAFANA_PORT:-3000}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -45,6 +49,8 @@ services:
       DATABASE_URL: postgresql+psycopg://costguard:${POSTGRES_PASSWORD:-costguard-local}@postgres:5432/costguard
       GATEWAY_URL: http://bifrost:8080
       BIFROST_VIRTUAL_KEY: ${BIFROST_VIRTUAL_KEY:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-10000}
     depends_on:
       app:
         condition: service_healthy
@@ -77,6 +83,18 @@ services:
     ports:
       - "127.0.0.1:11435:11434"
 
+  # Collector, Prometheus, Tempo and Grafana in one container, with the CostGuard dashboard provisioned.
+  # Only started by `make observe`; Grafana is open without a login, so it binds to localhost only.
+  lgtm:
+    image: grafana/otel-lgtm:0.39.0
+    profiles: ["observability"]
+    volumes:
+      - ./observability/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/costguard.yaml:ro
+      - ./observability/dashboards:/costguard-dashboards:ro
+      - lgtm_data:/data
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+
   mock-provider:
     image: costguard:prototype
     command: ["uvicorn", "demo.mock_provider:app", "--host", "0.0.0.0", "--port", "9000"]
@@ -86,3 +104,4 @@ volumes:
   postgres_data:
   bifrost_data:
   ollama_data:
+  lgtm_data:

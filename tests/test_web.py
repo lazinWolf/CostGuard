@@ -127,6 +127,24 @@ class AnalystSectionTests(unittest.TestCase):
         self.assertIn("Fix passes", page)
 
 
+class ConnectionsPageTests(unittest.TestCase):
+    def page(self, telemetry_status):
+        with (patch("costguard.web.db.get_analyst_settings", return_value=None),
+              patch("costguard.web.gateway.status", return_value={"status": "connected", "models": [], "settings_url": "http://gw"}),
+              patch("costguard.web.telemetry.status", return_value=telemetry_status)):
+            return TestClient(app, base_url="http://localhost").get("/connections").text
+
+    def test_telemetry_that_is_off_says_how_to_turn_it_on(self):
+        page = self.page({"enabled": False, "endpoint": None, "dashboard_url": None})
+        self.assertIn("make observe", page)
+        self.assertNotIn("Open the dashboard", page)
+
+    def test_telemetry_that_is_on_links_the_dashboard(self):
+        page = self.page({"enabled": True, "endpoint": "http://lgtm:4318", "dashboard_url": "http://localhost:3000"})
+        self.assertIn("http://lgtm:4318", page)
+        self.assertIn("http://localhost:3000/d/costguard", page)
+
+
 class JudgedPageTests(unittest.TestCase):
     def test_the_new_check_form_offers_both_presets_and_the_judge_fields(self):
         client = TestClient(app, base_url="http://localhost")

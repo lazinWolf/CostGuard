@@ -4,6 +4,10 @@
 <p><a class="button" href="{{gateway.settings_url}}" target="_blank" rel="noopener noreferrer">Open provider settings ↗</a></p>
 <p class="muted">The gateway opens in a separate tab. Add an OpenAI-compatible provider with your base URL, key, and model, or connect a local model server.</p>
 <h3>Available model IDs</h3>{% if gateway.models %}<ul>{% for model in gateway.models %}<li><code>{{model}}</code></li>{% endfor %}</ul>{% else %}<p>None discovered yet. Check the gateway and configure a provider.</p>{% endif %}</div>
+<div class="card"><h2>Telemetry <span class="status {{'connected' if telemetry.enabled}}">{{'on' if telemetry.enabled else 'off'}}</span></h2>
+{% if telemetry.enabled %}<p>Traces and metrics are sent to <code>{{telemetry.endpoint}}</code>: every model call with its tokens and cost, and each run, case and comparison.</p>
+{% if telemetry.dashboard_url %}<p><a class="button" href="{{telemetry.dashboard_url}}/d/costguard" target="_blank" rel="noopener noreferrer">Open the dashboard ↗</a></p>{% endif %}
+{% else %}<p>Nothing is exported. Run <code>make observe</code> to start Grafana and send traces and metrics there, or set <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> for your own OpenTelemetry collector.</p>{% endif %}</div>
 <form class="card" id="analyst-form"><h2>Analyst</h2>
 <p>Choose a model that supports chat tool calls. This model reads a check and proposes fixes. It can differ from the workload model.</p>
 <label for="analyst-model">Gateway model ID (provider/model)</label><input id="analyst-model" list="models" required placeholder="provider/model" value="{{(analyst.provider ~ '/' ~ analyst.model) if analyst else ''}}"><datalist id="models">{% for model in gateway.models %}<option value="{{model}}">{% endfor %}</datalist>

@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from costguard import ComparisonReport, ComparisonRequest, compare_workloads, service
+from costguard import ComparisonReport, ComparisonRequest, compare_workloads, service, telemetry
 from costguard.api import router
 from costguard.web import router as web_router
 
@@ -17,6 +17,8 @@ from costguard.web import router as web_router
 ALLOWED_HOSTS = [host.strip() for host in
                  os.environ.get("COSTGUARD_ALLOWED_HOSTS", "localhost,127.0.0.1,app").split(",")
                  if host.strip()]
+
+telemetry.setup("costguard-app")  # A no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
 
 app = FastAPI(
     title="CostGuard API",

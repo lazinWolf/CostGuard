@@ -3,13 +3,16 @@ MODEL ?= ollama/llama3.2:3b-instruct-q4_K_M
 ANALYST ?= granite4.2:8b-q4_K_M
 COMPOSE = docker compose --profile local
 
-.PHONY: up down models warm recorded demo test e2e gate logs
+.PHONY: up down models warm observe recorded demo test e2e gate logs
 
 up:        ## Build and start app, runner, PostgreSQL, Bifrost and Ollama
 	$(COMPOSE) up -d --build --wait
 
 down:      ## Stop the stack (data volumes are kept)
 	$(COMPOSE) down
+
+observe:   ## Start the stack with telemetry: traces and metrics go to Grafana (http://localhost:3000)
+	OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4318 $(COMPOSE) --profile observability up -d --build --wait
 
 models:    ## Pull the workload and analyst models and register them in Bifrost
 	$(COMPOSE) exec ollama ollama pull $(MODEL:ollama/%=%)

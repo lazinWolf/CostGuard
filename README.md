@@ -85,6 +85,17 @@ A local model has no per-token bill, so the form prefills **notional reference r
 - **Your own evidence:** `POST /api/v1/artifacts` or `python -m costguard import <file>` takes a versioned execution artifact (case IDs, model calls, usage provenance, latency, steps, output, quality and non-model charges). `costguard.hook.ArtifactRecorder` wraps each case in an existing app to produce one; it does not intercept SDK calls automatically. Imported evidence can be explained but not re-run.
 - **Structured events:** the service and runner print one JSON line per event (`check.created`, `run.finished`, `comparison.saved`, `fixes.started`, `fix.measured`, `judge.call`, `example.loaded`) to `docker compose logs`. See the next section to send them elsewhere.
 
+## Observability
+
+`make observe` starts the stack with OpenTelemetry on and adds **Grafana** at <http://localhost:3000> (one `grafana/otel-lgtm` container: collector, Prometheus, Tempo and Grafana; open without a login, localhost only). The dashboard **CostGuard: spend and checks** is provisioned and shows, since the app and runner last started:
+
+- **What CostGuard itself spends**, by role: the workload under test, the judge and the analyst, with tokens, calls and failures. Prices are the ones entered for each model.
+- **Model-call duration** (p50, p95), leaving out time spent waiting out provider rate limits, the same way latency is measured.
+- **Verdicts reached** and **fixes measured** (pass, fail, inconclusive).
+- **Recent traces**: a run is one trace, with a span per case, per model call (workload and judge) and for the comparison that follows; an analyst run is one trace with a span per model call and per tool. Spans carry the OpenTelemetry GenAI attributes (`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) plus `costguard.role` and `costguard.cost_usd`.
+
+To use your own backend instead, set `OTEL_EXPORTER_OTLP_ENDPOINT` (and, if needed, the standard `OTEL_EXPORTER_OTLP_HEADERS`) in `.env`: the app and runner export OTLP over HTTP to it. With the endpoint empty (the default) nothing is exported and the instrumentation does nothing. **Connections** shows whether telemetry is on. Telemetry describes CostGuard's own spend and health; it never feeds a verdict. Counters restart when the app or runner restarts, and the dashboard totals are sums of what is running now. Not built: HTTP request spans for the web app, queue and lease metrics, log export.
+
 ## Extending it
 
 The product's verbs live in [`costguard/service.py`](costguard/service.py); the web pages, API, CLI, MCP server and runner all call them, so a new surface gets the same behavior.
@@ -93,7 +104,7 @@ The product's verbs live in [`costguard/service.py`](costguard/service.py); the 
 | --- | --- |
 | A way to score answers | decorate a function with `@evaluators.register("name")` in [`evaluators.py`](costguard/evaluators.py) and add the name to the evaluator literals in `execution.py` and `checks.py` |
 | An analyst tool | decorate a handler with `@tool(name, description, schema)` in [`investigation.py`](costguard/investigation.py); it is advertised and dispatched automatically |
-| Observability | pass a function to `events.add_sink` ([`events.py`](costguard/events.py)); an OpenTelemetry, Prometheus or Langfuse exporter is one sink. None ships today |
+| Another observability backend | point `OTEL_EXPORTER_OTLP_ENDPOINT` at it (see Observability above). For a different kind of signal, pass a function to `events.add_sink` ([`events.py`](costguard/events.py)); [`telemetry.py`](costguard/telemetry.py) is the OpenTelemetry sink |
 | An MCP tool | decorate a function in [`mcp_server.py`](costguard/mcp_server.py) that calls `service` |
 | A starting suite | add a JSON file like [`examples/refund_reply.json`](examples/refund_reply.json) and list it in `checks.PRESETS` |
 
@@ -108,12 +119,12 @@ The product's verbs live in [`costguard/service.py`](costguard/service.py); the 
 
 ## Make targets
 
-`make up`, `make models`, `make warm`, `make recorded` (replay the recorded example), `make demo` (a check plus an investigation from the terminal), `make test`, `make e2e`, `make gate`, `make logs`, `make down`. They use `--profile local`.
+`make up`, `make observe` (the same stack plus Grafana and telemetry), `make models`, `make warm`, `make recorded` (replay the recorded example), `make demo` (a check plus an investigation from the terminal), `make test`, `make e2e`, `make gate`, `make logs`, `make down`. They use `--profile local`.
 
 ## Verify
 
 ```bash
-make test       # 124 unit tests in the app image
+make test       # 136 unit tests in the app image
 make e2e        # mock end-to-end workflow incl. fix search, judge and replay (starts the demo profile)
 make gate       # the CI cost gate on recorded runs
 ```

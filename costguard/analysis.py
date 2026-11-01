@@ -40,6 +40,12 @@ def _compare(
     )
 
 
+def token_cost(input_tokens: int, output_tokens: int, input_per_million_usd: Decimal,
+               output_per_million_usd: Decimal) -> Decimal:
+    """What one call cost at explicit per-million-token prices."""
+    return (Decimal(input_tokens) * input_per_million_usd + Decimal(output_tokens) * output_per_million_usd) / MILLION
+
+
 def _call_cost(call, prices) -> Decimal:
     price = prices[call.key]
     input_cost = Decimal(call.input_tokens) * price.input_per_million_usd / MILLION

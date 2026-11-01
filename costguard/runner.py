@@ -8,7 +8,8 @@ from uuid import uuid4
 
 import httpx
 
-from . import db, evaluators, events, gateway, ratelimit, service
+from . import db, evaluators, events, gateway, ratelimit, service, telemetry
+from .analysis import token_cost
 from .economics import case_cost
 from .execution import Call, CaseExecution, ExecutionArtifact, ExperimentSpec, Step
 from .investigation_worker import execute_investigation
@@ -37,34 +38,40 @@ def _attempt(spec: ExperimentSpec, text: str, number: int, client: httpx.Client,
     error = None
     retryable = True
     usage_source, input_tokens, output_tokens, status = "missing", None, None, "error"
-    try:
-        response = ratelimit.post(
-            client, "/v1/chat/completions",
-            json={"model": f"{spec.provider}/{spec.model}",
-                  "messages": [{"role": "system", "content": spec.system_prompt},
-                               {"role": "user", "content": text}],
-                  "max_tokens": spec.limits.max_output_tokens,
-                  "stream": False}
-                 | ({} if spec.temperature is None else {"temperature": spec.temperature}),
-            timeout=spec.limits.timeout_seconds, should_continue=should_continue, waits=waits)
-        response.raise_for_status()
-        data = response.json()
-        message = data["choices"][0]["message"]
-        answer = message["content"] or ""
-        thought = message.get("reasoning_content") or message.get("reasoning")
-        reasoning = thought if isinstance(thought, str) else ""
-        usage = data.get("usage")
-        if usage and isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
-            input_tokens, output_tokens, usage_source = usage["prompt_tokens"], usage["completion_tokens"], "gateway"
-        status = "ok"
-    except httpx.HTTPStatusError as exc:
-        code = exc.response.status_code
-        reason = ratelimit.error_reason(exc.response)
-        error = f"model request failed: HTTP {code}" + (f" ({reason})" if reason else "")
-        retryable = code >= 500 or code in RETRYABLE_STATUS
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-        error = f"model request failed: {type(exc).__name__}"
-    waited = sum(waits)
+    with telemetry.model_call("workload", f"{spec.provider}/{spec.model}", **{"costguard.attempt": number}) as seen:
+        try:
+            response = ratelimit.post(
+                client, "/v1/chat/completions",
+                json={"model": f"{spec.provider}/{spec.model}",
+                      "messages": [{"role": "system", "content": spec.system_prompt},
+                                   {"role": "user", "content": text}],
+                      "max_tokens": spec.limits.max_output_tokens,
+                      "stream": False}
+                     | ({} if spec.temperature is None else {"temperature": spec.temperature}),
+                timeout=spec.limits.timeout_seconds, should_continue=should_continue, waits=waits)
+            response.raise_for_status()
+            data = response.json()
+            message = data["choices"][0]["message"]
+            answer = message["content"] or ""
+            thought = message.get("reasoning_content") or message.get("reasoning")
+            reasoning = thought if isinstance(thought, str) else ""
+            usage = data.get("usage")
+            if usage and isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
+                input_tokens, output_tokens, usage_source = usage["prompt_tokens"], usage["completion_tokens"], "gateway"
+            status = "ok"
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            reason = ratelimit.error_reason(exc.response)
+            error = f"model request failed: HTTP {code}" + (f" ({reason})" if reason else "")
+            retryable = code >= 500 or code in RETRYABLE_STATUS
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
+            error = f"model request failed: {type(exc).__name__}"
+        waited = sum(waits)
+        seen.input_tokens, seen.output_tokens, seen.waited = input_tokens, output_tokens, waited
+        seen.error = error and error.removeprefix("model request failed: ")
+        if usage_source == "gateway":
+            price = spec.pricing.as_map()[(spec.provider, spec.model)]
+            seen.cost_usd = token_cost(input_tokens, output_tokens, price.input_per_million_usd, price.output_per_million_usd)
     call = Call(
         call_id=str(uuid4()), step_id="model-1", provider=spec.provider, model=spec.model,
         input_tokens=input_tokens, output_tokens=output_tokens, usage_source=usage_source, status=status,
@@ -161,8 +168,9 @@ def execute_job(job_id: str, spec: ExperimentSpec) -> str:
                     db.update_job(job_id, state="interrupted", error="configured spend threshold reached")
                     break
                 db.update_job(job_id, progress=len(cases))
-                case = run_case(spec, input_case, client,
-                                should_continue=lambda: (db.get_job(job_id) or {}).get("state") == "running")
+                with telemetry.span(f"case {input_case.case_id}", **{"costguard.case_id": input_case.case_id}):
+                    case = run_case(spec, input_case, client,
+                                    should_continue=lambda: (db.get_job(job_id) or {}).get("state") == "running")
                 cases.append(case)
                 amount = case_cost(case, spec.pricing)
                 if amount is not None:
@@ -208,23 +216,26 @@ def _next_job() -> bool:
     if not claimed:
         return False
     job_id, spec = claimed
-    try:
-        execute_job(job_id, spec)
-    except Exception as exc:
-        db.update_job(job_id, state="failed", error=f"runner error: {type(exc).__name__}")
-        events.emit("runner.error", job_id=job_id, type=type(exc).__name__)
-        return True
-    try:
-        service.job_finished(job_id)  # Compares a finished check or fix with its baseline.
-    except Exception as exc:
-        events.emit("followup.error", job_id=job_id, type=type(exc).__name__)
+    with telemetry.span(f"run {spec.name}", **{"costguard.job_id": job_id, "costguard.suite_id": spec.suite_id,
+                                               "gen_ai.request.model": f"{spec.provider}/{spec.model}"}):
+        try:
+            execute_job(job_id, spec)
+        except Exception as exc:
+            db.update_job(job_id, state="failed", error=f"runner error: {type(exc).__name__}")
+            events.emit("runner.error", job_id=job_id, type=type(exc).__name__)
+            return True
+        try:
+            service.job_finished(job_id)  # Compares a finished check or fix with its baseline.
+        except Exception as exc:
+            events.emit("followup.error", job_id=job_id, type=type(exc).__name__)
     return True
 
 
 def _next_investigation() -> bool:
     investigation_id = db.claim_investigation()
     if investigation_id:
-        execute_investigation(investigation_id)
+        with telemetry.span("investigation", **{"costguard.investigation_id": investigation_id}):
+            execute_investigation(investigation_id)
     return investigation_id is not None
 
 
@@ -241,4 +252,5 @@ def work_forever() -> None:
 
 
 if __name__ == "__main__":
+    telemetry.setup("costguard-runner")
     work_forever()

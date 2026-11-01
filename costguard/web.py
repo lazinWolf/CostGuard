@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import checks, db, gateway, service
+from . import checks, db, gateway, service, telemetry
 from .analyst_view import analyst_view
 from .diagnosis import format_usd, headline, percent
 
@@ -55,7 +55,8 @@ def check_page(request: Request, report_id: str):
 
 @router.get("/connections", response_class=HTMLResponse)
 def connections(request: Request):
-    return _page(request, "connections.html", gateway=gateway.status(), analyst=db.get_analyst_settings())
+    return _page(request, "connections.html", gateway=gateway.status(), analyst=db.get_analyst_settings(),
+                 telemetry=telemetry.status())
 
 
 # Earlier versions had separate report and investigation pages; their links still work.

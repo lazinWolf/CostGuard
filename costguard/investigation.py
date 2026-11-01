@@ -9,7 +9,8 @@ from typing import Callable
 import httpx
 from pydantic import ConfigDict, Field, ValidationError
 
-from . import diagnosis, ratelimit
+from . import diagnosis, ratelimit, telemetry
+from .analysis import token_cost
 from .gateway import parse_json_reply
 from .economics import case_cost
 from .execution import ExecutionArtifact, ExperimentSpec
@@ -449,6 +450,7 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
         result.update(cost_usd=None, cost_known=False, known_cost_usd=str(spent))
         progress(result)
         run.seen_references = tools.references.copy()
+        seen = telemetry.ModelCall("analyst", f"{settings.provider}/{settings.model}")
         try:
             response = ratelimit.post(client, "/v1/chat/completions", json={
                 "model": f"{settings.provider}/{settings.model}", "messages": messages,
@@ -462,11 +464,15 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
             reason = ratelimit.error_reason(exc.response) if status else ""
             state, error = "failed", (f"Analyst gateway request failed{f' (HTTP {status})' if status else ''}"
                                       f"{f': {reason}' if reason else ''}. Check Connections.")
+            seen.error = f"HTTP {status}" if status else type(exc).__name__
+            seen.finish()
             result["calls"][-1] = {"status": "error", "input_tokens": None, "output_tokens": None}
             result.update(cost_usd=None, cost_known=False)
             progress(result)
             break
         if not isinstance(data, dict):
+            seen.error = "invalid response"
+            seen.finish()
             result["calls"][-1] = {"status": "error", "input_tokens": None, "output_tokens": None}
             result.update(cost_usd=None, cost_known=False)
             state, error = "failed", "Analyst gateway returned an invalid response"
@@ -477,10 +483,13 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
             usage = {}
         input_tokens, output_tokens = usage.get("prompt_tokens"), usage.get("completion_tokens")
         known = all(type(value) is int and value >= 0 for value in (input_tokens, output_tokens))
-        amount = ((Decimal(input_tokens) * settings.input_per_million_usd
-                   + Decimal(output_tokens) * settings.output_per_million_usd) / 1000000) if known else None
+        amount = token_cost(input_tokens, output_tokens, settings.input_per_million_usd,
+                            settings.output_per_million_usd) if known else None
         if known:
             spent += amount
+        seen.input_tokens, seen.output_tokens, seen.cost_usd = (input_tokens, output_tokens, amount) if known else (None, None, None)
+        seen.error = None if known else "usage missing"
+        seen.finish()
         result["calls"][-1] = {"status": "ok", "input_tokens": input_tokens if known else None,
                                "output_tokens": output_tokens if known else None,
                                "response_model": data.get("model"),
@@ -531,7 +540,8 @@ def investigate(question: str, settings: AnalystSettings, tools: EvidenceTools,
                     registered = REGISTRY.get(name)
                     if registered is None:
                         raise ToolError("Tool is not allowed. Available tools: " + ", ".join(REGISTRY))
-                    output = registered.handler(run, arguments)
+                    with telemetry.span(f"tool {name}"):
+                        output = registered.handler(run, arguments)
                 except ToolError as exc:
                     output = {"error": str(exc)}
                 except ValidationError as exc:

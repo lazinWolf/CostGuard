@@ -49,6 +49,8 @@ digraph CostGuardArchitecture {
     runner [label="Runner\n① runs baseline & candidate cases\n② compares each finished check\n③ analyst, digest-first tool loop\n④ measures each proposed fix\njudge model scores answers", fillcolor="#10527B"];
     db [label="PostgreSQL · Alembic\nruns · outputs · judgements\nchecks · investigations · fixes"];
     events [label="Event log\nJSON lines · pluggable sinks", fillcolor="#1B3A55"];
+    otel [label="OpenTelemetry\nmodel-call spans · spend · verdicts\nopt-in: make observe", fillcolor="#1B3A55"];
+    grafana [label="Grafana · Tempo · Prometheus\none dashboard, one trace per run", fillcolor="#1B3A55"];
     bifrost [label="Bifrost gateway\nproviders · keys · routes"];
     ollama [label="Ollama (local GPU)\nLlama 3.2 · Granite · Qwen"];
   }
@@ -63,6 +65,9 @@ digraph CostGuardArchitecture {
   recorded -> app [label="load instantly", style=dashed];
   runner -> events [style=dashed];
   app -> events [style=dashed];
+  events -> otel [label="sink", style=dashed];
+  runner -> otel [label="model calls", style=dashed];
+  otel -> grafana [label="OTLP", style=dashed];
   app -> db [label="queue jobs\nsave comparisons"];
   runner -> db [label="claim jobs\nsave evidence"];
   runner -> bifrost [label="workload, analyst\nand judge calls"];

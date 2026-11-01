@@ -11,7 +11,8 @@ from typing import Callable
 
 import httpx
 
-from . import events, ratelimit
+from . import events, ratelimit, telemetry
+from .analysis import token_cost
 from .execution import Judgement
 from .gateway import parse_json_reply
 
@@ -90,24 +91,26 @@ def llm_judge(spec, case, answer: str, client: httpx.Client) -> Score:
     evaluator = f"llm_judge:v1:{model}"
     message = {"message": case.prompt, "answer": answer} | (
         {"reference_answer": case.expected_text} if case.expected_text else {})
-    try:
-        response = ratelimit.post(client, "/v1/chat/completions", json={
-            "model": model, "temperature": 0, "stream": False, "max_tokens": judge.max_output_tokens,
-            "messages": [{"role": "system", "content": JUDGE_INSTRUCTIONS + judge.rubric},
-                         {"role": "user", "content": json.dumps(message, ensure_ascii=False)}]},
-            timeout=judge.timeout_seconds)
-        response.raise_for_status()
-        data = response.json()
-        reply = data["choices"][0]["message"]["content"]
-        usage = data.get("usage") or {}
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-        return Score(None, evaluator, Judgement(
-            passed=None, reason=f"The judge could not be reached ({type(exc).__name__}).", model=model))
+    with telemetry.model_call("judge", model) as seen:
+        try:
+            response = ratelimit.post(client, "/v1/chat/completions", json={
+                "model": model, "temperature": 0, "stream": False, "max_tokens": judge.max_output_tokens,
+                "messages": [{"role": "system", "content": JUDGE_INSTRUCTIONS + judge.rubric},
+                             {"role": "user", "content": json.dumps(message, ensure_ascii=False)}]},
+                timeout=judge.timeout_seconds)
+            response.raise_for_status()
+            data = response.json()
+            reply = data["choices"][0]["message"]["content"]
+            usage = data.get("usage") or {}
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
+            seen.error = type(exc).__name__
+            return Score(None, evaluator, Judgement(
+                passed=None, reason=f"The judge could not be reached ({type(exc).__name__}).", model=model))
+        tokens = usage.get("prompt_tokens"), usage.get("completion_tokens")
+        known = all(type(count) is int and count >= 0 for count in tokens)
+        cost = token_cost(*tokens, judge.input_per_million_usd, judge.output_per_million_usd) if known else None
+        seen.input_tokens, seen.output_tokens, seen.cost_usd = (*tokens, cost) if known else (None, None, None)
     passed, reason = _verdict(reply)
-    tokens = usage.get("prompt_tokens"), usage.get("completion_tokens")
-    known = all(type(count) is int and count >= 0 for count in tokens)
-    cost = ((Decimal(tokens[0]) * judge.input_per_million_usd
-             + Decimal(tokens[1]) * judge.output_per_million_usd) / 1000000) if known else None
     events.emit("judge.call", model=model, passed=passed, cost_usd=None if cost is None else format(cost, "f"))
     return Score(None if passed is None else Decimal(int(passed)), evaluator, Judgement(
         passed=passed, reason=reason, model=model, cost_usd=cost,
