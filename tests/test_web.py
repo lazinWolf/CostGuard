@@ -55,6 +55,12 @@ class CheckPageTests(unittest.TestCase):
         self.assertIn("no fewer correct answers than the baseline", page)
         self.assertIn("No analyst model is configured", page)
 
+    def test_a_price_preset_button_is_valid_html(self):
+        # JSON in a double-quoted attribute would end it early and the button would do nothing.
+        page = self.render().text
+        self.assertIn("onclick='usePreset(\"", page)
+        self.assertNotIn('onclick="usePreset(', page)
+
     def test_a_missing_check_is_a_404(self):
         with patch("costguard.service.db.get_comparison", return_value=None):
             response = TestClient(app, base_url="http://localhost").get("/checks/nope")

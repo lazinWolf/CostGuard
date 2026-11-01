@@ -75,7 +75,11 @@ def format_usd(value) -> str:
     if value is None:
         return "Unknown"
     amount = Decimal(str(value))
-    return "$" + (format(amount, ",.2f") if abs(amount) >= 1 else format(amount.normalize(), "f"))
+    if abs(amount) >= 1:
+        return "$" + format(amount, ",.2f")
+    if amount:  # Six significant digits: enough to tell prices apart, short enough for a repeating decimal.
+        amount = amount.quantize(Decimal(1).scaleb(amount.adjusted() - 5))
+    return "$" + format(amount.normalize(), "f")
 
 
 def _number(value) -> str:

@@ -80,7 +80,7 @@
     <div><label for="wi-requests">Requests per month</label><input id="wi-requests" type="number" min="0" step="1" value="{{e.monthly_projection.requests if e.monthly_projection else 100000}}"></div>
     <div><button type="button" id="wi-run" onclick="whatIf()">Recalculate</button></div>
   </div>
-  {% if req.pricing.entries|length == 1 %}{% for preset in presets %}<p class="small">Try: <button type="button" class="secondary" onclick="usePreset({{preset.input|tojson}}, {{preset.output|tojson}})">{{preset.label}} · ${{preset.input|num}} / ${{preset.output|num}}</button></p>{% endfor %}{% endif %}
+  {% if req.pricing.entries|length == 1 %}{% for preset in presets %}<p class="small">Try: <button type="button" class="secondary" onclick='usePreset({{preset.input|tojson}}, {{preset.output|tojson}})'>{{preset.label}} · ${{preset.input|num}} / ${{preset.output|num}}</button></p>{% endfor %}{% endif %}
   <div id="wi-result" class="table-wrap"></div>
 </section>{% endif %}
 

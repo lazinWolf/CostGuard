@@ -66,6 +66,8 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(format_usd("1234.5"), "$1,234.50")
         self.assertEqual(format_usd("0.00009898"), "$0.00009898")
         self.assertEqual(format_usd("0.0000100"), "$0.00001")
+        self.assertEqual(format_usd(Decimal(1) / Decimal(3) / 100000), "$0.00000333333")
+        self.assertEqual(format_usd(0), "$0")
         self.assertEqual(format_usd(None), "Unknown")
 
 
