@@ -124,7 +124,7 @@ The product's verbs live in [`costguard/service.py`](costguard/service.py); the 
 ## Verify
 
 ```bash
-make test       # 136 unit tests in the app image
+make test       # 139 unit tests in the app image
 make e2e        # mock end-to-end workflow incl. fix search, judge and replay (starts the demo profile)
 make gate       # the CI cost gate on recorded runs
 ```

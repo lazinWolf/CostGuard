@@ -133,6 +133,19 @@ class AnalystSectionTests(unittest.TestCase):
         self.assertIn("Fix passes", page)
 
 
+class NewCheckPageTests(unittest.TestCase):
+    def test_a_model_is_not_made_the_analyst_unless_asked(self):
+        # A small workload model usually cannot call tools, so the box starts unticked.
+        for analyst in (None, {"provider": "p", "model": "m"}):
+            with patch("costguard.web.db.get_analyst_settings", return_value=analyst):
+                page = TestClient(app, base_url="http://localhost").get("/checks/new").text
+            box = page[page.index('id="use-as-analyst"'):].split(">", 1)[0]
+            self.assertNotIn("checked", box)
+
+    def test_no_favicon_is_a_quiet_204(self):
+        self.assertEqual(TestClient(app, base_url="http://localhost").get("/favicon.ico").status_code, 204)
+
+
 class ConnectionsPageTests(unittest.TestCase):
     def page(self, telemetry_status):
         with (patch("costguard.web.db.get_analyst_settings", return_value=None),

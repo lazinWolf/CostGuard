@@ -68,7 +68,7 @@
   </section>
 
   <section class="card">
-    <label class="row"><input id="use-as-analyst" type="checkbox" {{'' if analyst else 'checked'}} style="width:auto"> Also use this model as the analyst that explains a failing check (it needs tool-calling support){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% endif %}</label>
+    <label class="row"><input id="use-as-analyst" type="checkbox" style="width:auto"> Also use this model as the analyst that explains a failing check (it needs tool-calling support; small models usually do not){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% else %}. No analyst is set yet: tick this, or choose one on <a href="/connections">Connections</a>{% endif %}</label>
     <p class="row"><button id="start" type="submit">Run the check</button>
       <span class="small muted">Calls the model twice per case and may incur provider charges. Runs at temperature 0, so differences come from the prompt.</span></p>
     <p id="message" class="notice warn" hidden></p>

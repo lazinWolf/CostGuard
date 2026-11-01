@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -45,6 +45,11 @@ async def same_origin_writes(request: Request, call_next):
 
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)  # No icon: say so quietly instead of a 404 on every page load.
 
 
 @app.get("/health")

@@ -94,7 +94,7 @@ Earlier-round decisions that still hold: trim the surface and add *what-if price
 - **MCP.** `list_checks`, `get_check`, `explain_check` (no model call), plus run, report and investigation reads; `start_check` is gated.
 - **Own evidence.** Import a versioned execution artifact, or capture one with `costguard.hook`.
 - **DevOps.** Docker Compose profiles, GitHub Actions (image, unit tests, cost gate, end-to-end), Makefile shortcuts.
-- **Tests.** 136 unit tests plus a mock end-to-end workflow.
+- **Tests.** 139 unit tests plus a mock end-to-end workflow.
 
 Roughly 6,400 lines of Python across the package, demo provider, entry point and tests.
 
@@ -479,7 +479,7 @@ An 8 GB GPU holds Granite 4.2 8B (6.6 GB) only with the 8-bit KV cache and 16K c
 
 ## 15. Testing
 
-- **Unit tests** (136; `make test` runs them in the app image: `python -m unittest discover`): `test_analysis`, `test_execution`, `test_evaluators`, `test_checks`, `test_diagnosis`, `test_investigation`, `test_service`, `test_web`, `test_recorded`, `test_mcp`, `test_events`, `test_telemetry` (in-memory exporters; no collector needed). They patch out the database and gateway calls, so they run in the app image without the rest of the stack.
+- **Unit tests** (139; `make test` runs them in the app image: `python -m unittest discover`): `test_analysis`, `test_execution`, `test_evaluators`, `test_checks`, `test_diagnosis`, `test_investigation`, `test_service`, `test_web`, `test_recorded`, `test_mcp`, `test_events`, `test_telemetry` (in-memory exporters; no collector needed). They patch out the database and gateway calls, so they run in the app image without the rest of the stack.
 - **End-to-end** (`tests/e2e.py`, `make e2e`): against the demo stack with the mock provider, it covers a check from creation to verdict, the digest-first analyst, fix search (statuses pass/fail with one winner), a judged check, recorded replay, the UI pages, the CLI and MCP (including the refusal of `start_check`). A traceback from that expected refusal in the log is normal.
 - **Gate test** (`make gate`): exit 1 for the candidate and 0 for the fix.
 - **The mock provider is a fixture, not a model.** It proves the workflow, not reasoning quality. Its scripted fix B legitimately fails the 10 % cost limit, which is why the e2e expects `["pass", "fail"]`.
