@@ -2,6 +2,8 @@
 
 **Current milestone:** a functional, local-first prototype for pre-deployment economic regression analysis, with a model analyst that explains a failing change and has its proposed fixes measured.
 
+The complete reference (history, decisions, internals) is [REFERENCE.md](REFERENCE.md).
+
 ## Purpose
 
 AI application costs change with prompts, models, context, retries and execution behavior. CostGuard compares baseline and candidate workloads: **what changed, what does it cost, does it meet our constraints, and what should we test next?** Token pricing is an internal calculation, not the product.
@@ -26,9 +28,9 @@ AI application costs change with prompts, models, context, retries and execution
 - **Fix search:** one click runs every proposed fix; the runner compares each with the original baseline and limits, and a deterministic rule highlights the cheapest passing fix.
 - **Replay:** `examples/recorded/support-triage.json` is a real session (check, analyst run, three fixes) loaded instantly by `POST /api/v1/examples/recorded`, `make recorded` or the home page. Verdicts are recomputed on load.
 - **Surfaces over one service layer:** browser, HTTP API, CLI, MCP and the runner all call `costguard/service.py`. MCP adds `list_checks`, `get_check` and `explain_check`; `start_check` (paid calls) needs `COSTGUARD_MCP_ALLOW_RUNS=1`.
-- **Events:** one JSON line per event through pluggable sinks (`events.add_sink`).
+- **Events and telemetry:** one JSON line per event through pluggable sinks (`events.add_sink`). With `make observe`, OpenTelemetry traces and metrics (a span per run, case and model call; spend, tokens, duration and verdicts) go to a provisioned Grafana dashboard; off by default.
 - **DevOps:** GitHub Actions builds the image, runs the unit tests, a cost gate on recorded runs (the verbose candidate is blocked, the fix passes, both shown in the job summary) and the end-to-end workflow on the Compose stack.
-- **Verification:** 125 unit tests and the mock end-to-end workflow pass.
+- **Verification:** 136 unit tests and the mock end-to-end workflow pass.
 
 ## Components and responsibilities
 
@@ -43,6 +45,7 @@ AI application costs change with prompts, models, context, retries and execution
 | Bifrost gateway | Provider connections, credentials and model access |
 | Optional Ollama / mock provider | Local models / deterministic demonstration for CI |
 | CLI / MCP | CI economic gates and agent-readable evidence |
+| `telemetry.py` / Grafana (optional) | OpenTelemetry spans and metrics for CostGuard's own model calls and pipeline |
 
 Docker Compose connects the services; GitHub Actions runs the tests.
 
