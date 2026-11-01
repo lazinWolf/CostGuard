@@ -50,13 +50,6 @@ def output_tokens(case) -> int | None:
     return sum(call.output_tokens for call in case.calls)
 
 
-def mean_output_tokens(cases) -> int | None:
-    """Mean output tokens per case, or None unless every case reports usage."""
-    counts = [output_tokens(case) for case in cases]
-    known = [count for count in counts if count is not None]
-    return round(sum(known) / len(known)) if known and len(known) == len(counts) else None
-
-
 def explain(driver: dict | None, baseline, candidate) -> list[str]:
     """Plain sentences about what moved the cost, in the direction it actually moved."""
     if driver is None:
@@ -173,12 +166,6 @@ def limit_text(key: str, value) -> str:
     if key == "max_quality_drop" and number == 0:
         return "no fewer correct answers than the baseline"
     return LIMITS[key].text.format(format(number, "f"), pct=format((number * 100).normalize(), "f"))
-
-
-def describe_limits(policy: dict | None) -> list[str]:
-    """The limits that were set, in plain words."""
-    return [limit_text(key, value) for key, value in (policy or {}).items()
-            if value is not None and key in LIMITS]
 
 
 def limit_rows(report: dict, policy: dict | None) -> list[dict]:

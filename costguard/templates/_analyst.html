@@ -56,7 +56,7 @@
         <div><h3>Baseline prompt</h3><div class="prompt" id="p-baseline-{{loop.index}}" data-diff-left="p-fix-{{loop.index}}">{{prompts.baseline}}</div></div>
         <div><h3>{{fix.label}}, changes from the baseline</h3><div class="prompt" id="p-fix-{{loop.index}}">{{proposal.spec.system_prompt}}</div></div></div>
       {% endif %}
-      <details><summary class="small">Full experiment settings</summary><pre>{{proposal.spec|tojson(indent=2)}}</pre></details></details>
+      <details><summary class="small">Full run settings</summary><pre>{{proposal.spec|tojson(indent=2)}}</pre></details></details>
     {% endfor %}
 
     <h3>{{'Where things stand' if not analyst.measured else 'Did the fixes work?'}}</h3>

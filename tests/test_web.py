@@ -14,6 +14,13 @@ from tests.test_execution import artifact
 POLICY = {"max_cost_increase_percent": "20", "max_quality_drop": "0"}
 
 
+def setUpModule():
+    """No page test needs a database: nothing has been replayed from a recorded example."""
+    patcher = patch("costguard.service.db.recorded_examples", return_value=[])
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 def saved_check(candidate_tokens=3000):
     left, right = artifact("baseline"), artifact("candidate", candidate_tokens)
     left.configuration = {"system_prompt": "Answer briefly."}
@@ -84,8 +91,8 @@ class AnalystSectionTests(unittest.TestCase):
               patch("costguard.service.db.source_experiment", return_value=None),
               patch("costguard.service.db.related_investigations", return_value=related),
               patch("costguard.service.db.get_job", return_value={"id": "job-1", "state": "completed", "progress": 1, "total": 1}),
-              patch("costguard.web.db.get_investigation", return_value=row),
-              patch("costguard.web.db.get_analyst_settings", return_value={"provider": "test", "model": "analyst", "max_calls": 5})):
+              patch("costguard.analyst_view.db.get_investigation", return_value=row),
+              patch("costguard.analyst_view.db.get_analyst_settings", return_value={"provider": "test", "model": "analyst", "max_calls": 5})):
             response = TestClient(app, base_url="http://localhost").get("/checks/check-1")
         self.assertEqual(response.status_code, 200, response.text[:300])
         return response.text
@@ -145,7 +152,7 @@ class JudgedPageTests(unittest.TestCase):
               patch("costguard.service.db.get_artifact", side_effect=artifacts.get),
               patch("costguard.service.db.source_experiment", return_value=source),
               patch("costguard.service.db.related_investigations", return_value={"investigations": [], "source": None}),
-              patch("costguard.web.db.get_analyst_settings", return_value=None)):
+              patch("costguard.analyst_view.db.get_analyst_settings", return_value=None)):
             page = TestClient(app, base_url="http://localhost").get("/checks/check-1").text
         self.assertIn("Mentions the refund time.", page)
         self.assertIn("Judge: Missing the refund time.", page)

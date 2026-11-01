@@ -1,11 +1,9 @@
 # Shortcuts for the local stack. Add compose.gpu.yaml through COMPOSE_FILE in .env for an NVIDIA GPU.
 MODEL ?= ollama/llama3.2:3b-instruct-q4_K_M
 ANALYST ?= granite4.2:8b-q4_K_M
-SNAPSHOT ?= demo/snapshot.sql
 COMPOSE = docker compose --profile local
-PSQL = $(COMPOSE) exec -T postgres psql -q -U costguard -d costguard
 
-.PHONY: up down models warm recorded demo test e2e gate snapshot restore logs
+.PHONY: up down models warm recorded demo test e2e gate logs
 
 up:        ## Build and start app, runner, PostgreSQL, Bifrost and Ollama
 	$(COMPOSE) up -d --build --wait
@@ -36,12 +34,6 @@ e2e:       ## Mock end-to-end workflow (starts the demo profile)
 
 gate:      ## CI cost gate on the recorded runs in examples/ci
 	bash examples/ci/gate.sh
-
-snapshot:  ## Save the database as the demo fallback
-	$(COMPOSE) exec -T postgres pg_dump -U costguard -d costguard --clean --if-exists --no-owner > $(SNAPSHOT)
-
-restore:   ## Replace the whole database with the saved dump (an older recorded session; `make recorded` is the usual fallback)
-	$(PSQL) -v ON_ERROR_STOP=1 < $(SNAPSHOT)
 
 logs:
 	$(COMPOSE) logs -f app runner

@@ -108,12 +108,12 @@ The product's verbs live in [`costguard/service.py`](costguard/service.py); the 
 
 ## Make targets
 
-`make up`, `make models`, `make warm`, `make recorded` (replay the recorded example), `make demo` (a check plus an investigation from the terminal), `make test`, `make e2e`, `make gate`, `make snapshot` / `make restore` (save or load a whole-database dump; the bundled one is an older recorded session), `make down`. They use `--profile local`.
+`make up`, `make models`, `make warm`, `make recorded` (replay the recorded example), `make demo` (a check plus an investigation from the terminal), `make test`, `make e2e`, `make gate`, `make logs`, `make down`. They use `--profile local`.
 
 ## Verify
 
 ```bash
-make test       # 125 unit tests in the app image
+make test       # 124 unit tests in the app image
 make e2e        # mock end-to-end workflow incl. fix search, judge and replay (starts the demo profile)
 make gate       # the CI cost gate on recorded runs
 ```

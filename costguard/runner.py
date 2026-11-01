@@ -1,7 +1,8 @@
-"""Sequential experiment runner. Network calls are never replayed after a lost lease."""
+"""Sequential runner for workload runs and analyst investigations. Network calls are never replayed after a lost lease."""
 
 import threading
 import time
+from dataclasses import dataclass
 from decimal import Decimal
 from uuid import uuid4
 
@@ -18,14 +19,71 @@ OUTPUT_LIMIT = 2000
 RETRYABLE_STATUS = {408, 409, 429}
 
 
+@dataclass
+class Attempt:
+    """One request to the model and what came back."""
+    call: Call
+    answer: str = ""
+    reasoning: str = ""
+    error: str | None = None
+    retryable: bool = True
+    waited: float = 0.0  # Seconds spent waiting for provider rate limits.
+
+
+def _attempt(spec: ExperimentSpec, text: str, number: int, client: httpx.Client, should_continue) -> Attempt:
+    started = time.monotonic()
+    waits: list[float] = []
+    answer = reasoning = ""
+    error = None
+    retryable = True
+    usage_source, input_tokens, output_tokens, status = "missing", None, None, "error"
+    try:
+        response = ratelimit.post(
+            client, "/v1/chat/completions",
+            json={"model": f"{spec.provider}/{spec.model}",
+                  "messages": [{"role": "system", "content": spec.system_prompt},
+                               {"role": "user", "content": text}],
+                  "max_tokens": spec.limits.max_output_tokens,
+                  "stream": False}
+                 | ({} if spec.temperature is None else {"temperature": spec.temperature}),
+            timeout=spec.limits.timeout_seconds, should_continue=should_continue, waits=waits)
+        response.raise_for_status()
+        data = response.json()
+        message = data["choices"][0]["message"]
+        answer = message["content"] or ""
+        thought = message.get("reasoning_content") or message.get("reasoning")
+        reasoning = thought if isinstance(thought, str) else ""
+        usage = data.get("usage")
+        if usage and isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
+            input_tokens, output_tokens, usage_source = usage["prompt_tokens"], usage["completion_tokens"], "gateway"
+        status = "ok"
+    except httpx.HTTPStatusError as exc:
+        code = exc.response.status_code
+        reason = ratelimit.error_reason(exc.response)
+        error = f"model request failed: HTTP {code}" + (f" ({reason})" if reason else "")
+        retryable = code >= 500 or code in RETRYABLE_STATUS
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
+        error = f"model request failed: {type(exc).__name__}"
+    waited = sum(waits)
+    call = Call(
+        call_id=str(uuid4()), step_id="model-1", provider=spec.provider, model=spec.model,
+        input_tokens=input_tokens, output_tokens=output_tokens, usage_source=usage_source, status=status,
+        latency_ms=_milliseconds(time.monotonic() - started - waited), attempt=number,
+        tags={"rate_limit_wait_ms": str(round(waited * 1000))} if waits else {})
+    return Attempt(call, answer, reasoning, error, retryable, waited)
+
+
+def _milliseconds(seconds: float) -> Decimal:
+    return Decimal(str(round(max(seconds, 0) * 1000, 4)))
+
+
 def run_case(spec: ExperimentSpec, case, client: httpx.Client,
              should_continue=lambda: True) -> CaseExecution:
     started = time.monotonic()
     rate_limited = 0.0  # Seconds spent waiting for provider rate limits, kept out of latency.
     calls: list[Call] = []
     steps: list[Step] = []
-    answer = ""
-    reasoning = ""
+    answer = reasoning = ""
     error = None
     if spec.kind == "tool_loop":
         if spec.limits.max_tool_calls < 1 or spec.limits.max_steps < 2:
@@ -40,60 +98,16 @@ def run_case(spec: ExperimentSpec, case, client: httpx.Client,
         if not should_continue():
             error = "cancelled"
         else:
-            model_step = "model-1"
-            steps.append(Step(step_id=model_step, kind="model", name=spec.model, latency_ms=0))
-            for attempt in range(1, spec.limits.max_attempts + 1):
+            steps.append(Step(step_id="model-1", kind="model", name=spec.model, latency_ms=0))
+            for number in range(1, spec.limits.max_attempts + 1):
                 if not should_continue():
                     error = "cancelled"
                     break
-                call_started = time.monotonic()
-                waits: list[float] = []
-                usage_source = "missing"
-                input_tokens = output_tokens = None
-                status = "error"
-                retryable = True
-                try:
-                    response = ratelimit.post(
-                        client, "/v1/chat/completions",
-                        json={"model": f"{spec.provider}/{spec.model}",
-                              "messages": [{"role": "system", "content": spec.system_prompt},
-                                           {"role": "user", "content": text}],
-                              "max_tokens": spec.limits.max_output_tokens,
-                              "stream": False}
-                             | ({} if spec.temperature is None else {"temperature": spec.temperature}),
-                        timeout=spec.limits.timeout_seconds, should_continue=should_continue,
-                        waits=waits,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-                    message = data["choices"][0]["message"]
-                    answer = message["content"] or ""
-                    thought = message.get("reasoning_content") or message.get("reasoning")
-                    reasoning = thought if isinstance(thought, str) else ""
-                    usage = data.get("usage")
-                    if usage and isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
-                        input_tokens = usage["prompt_tokens"]
-                        output_tokens = usage["completion_tokens"]
-                        usage_source = "gateway"
-                    status = "ok"
-                    error = None
-                except httpx.HTTPStatusError as exc:
-                    code = exc.response.status_code
-                    reason = ratelimit.error_reason(exc.response)
-                    error = f"model request failed: HTTP {code}" + (f" ({reason})" if reason else "")
-                    retryable = code >= 500 or code in RETRYABLE_STATUS
-                except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-                    error = f"model request failed: {type(exc).__name__}"
-                rate_limited += sum(waits)
-                elapsed = Decimal(str(round(max(time.monotonic() - call_started - sum(waits), 0) * 1000, 4)))
-                calls.append(Call(
-                    call_id=str(uuid4()), step_id=model_step, provider=spec.provider,
-                    model=spec.model, input_tokens=input_tokens,
-                    output_tokens=output_tokens, usage_source=usage_source,
-                    status=status, latency_ms=elapsed, attempt=attempt,
-                    tags={"rate_limit_wait_ms": str(round(sum(waits) * 1000))} if waits else {},
-                ))
-                if status == "ok" or not retryable:
+                attempt = _attempt(spec, text, number, client, should_continue)
+                calls.append(attempt.call)
+                rate_limited += attempt.waited
+                answer, reasoning, error = attempt.answer, attempt.reasoning, attempt.error
+                if attempt.call.status == "ok" or not attempt.retryable:
                     break
             steps[-1].latency_ms = sum((call.latency_ms for call in calls), Decimal("0"))
             steps[-1].status = "ok" if error is None else "error"
@@ -101,7 +115,7 @@ def run_case(spec: ExperimentSpec, case, client: httpx.Client,
     status = "cancelled" if error == "cancelled" else "error" if error else "ok"
     return CaseExecution(
         case_id=case.case_id, status=status,
-        latency_ms=Decimal(str(round(max(time.monotonic() - started - rate_limited, 0) * 1000, 4))),
+        latency_ms=_milliseconds(time.monotonic() - started - rate_limited),
         calls=calls, steps=steps, quality_score=score.quality, evaluator=score.evaluator, judgement=score.judgement,
         error=error, output=answer[:OUTPUT_LIMIT] if answer else None,
         reasoning=reasoning[:OUTPUT_LIMIT] if reasoning else None,

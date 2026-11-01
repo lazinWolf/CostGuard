@@ -2,8 +2,8 @@ import unittest
 
 from decimal import Decimal
 
-from costguard.diagnosis import (case_rows, changed_cases, describe_limits, format_usd, judge_spend, limit_rows,
-                                 mean_output_tokens, pick_winner, prompt_change)
+from costguard.diagnosis import (case_rows, changed_cases, format_usd, judge_spend, limit_rows,
+                                 limit_text, pick_winner, prompt_change)
 from costguard.execution import Judgement
 from costguard.economics import compare_artifacts
 from costguard.models import ComparisonPolicy
@@ -19,13 +19,11 @@ def stored_report(policy: dict, candidate_tokens=3000, **candidate_options):
 
 class LimitTests(unittest.TestCase):
     def test_limits_are_described_in_plain_words(self):
-        self.assertEqual(describe_limits({"max_cost_increase_percent": "20", "max_quality_drop": "0",
-                                          "min_candidate_quality_score": "0.85"}),
-                         ["cost per request may rise by at most 20%",
-                          "no fewer correct answers than the baseline", "at least 85% of answers correct"])
-        self.assertEqual(describe_limits({"max_quality_drop": "0.1"}),
-                         ["correct answers may fall at most 10 percentage points below the baseline"])
-        self.assertEqual(describe_limits(None), [])
+        self.assertEqual(limit_text("max_cost_increase_percent", "20"), "cost per request may rise by at most 20%")
+        self.assertEqual(limit_text("max_quality_drop", "0"), "no fewer correct answers than the baseline")
+        self.assertEqual(limit_text("min_candidate_quality_score", "0.85"), "at least 85% of answers correct")
+        self.assertEqual(limit_text("max_quality_drop", "0.1"),
+                         "correct answers may fall at most 10 percentage points below the baseline")
 
     def test_each_limit_is_shown_beside_what_was_measured(self):
         policy = {"max_cost_increase_percent": "20", "max_quality_drop": "0", "max_monthly_cost_usd": "1000"}
@@ -69,10 +67,6 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(format_usd("0.00009898"), "$0.00009898")
         self.assertEqual(format_usd("0.0000100"), "$0.00001")
         self.assertEqual(format_usd(None), "Unknown")
-
-    def test_mean_output_tokens_needs_usage_for_every_case(self):
-        self.assertEqual(mean_output_tokens(artifact("one").cases), 0)
-        self.assertIsNone(mean_output_tokens(artifact("unknown", source="missing").cases))
 
 
 class FixSearchTests(unittest.TestCase):

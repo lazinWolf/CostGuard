@@ -368,20 +368,20 @@ class NumberCheckTests(unittest.TestCase):
         self.assertEqual(self.check("case-2 on llama3.2:3b-q4_K_M used 3 calls."), [])
 
     def test_answer_links_cited_cases_and_flags_unfound_numbers(self):
-        from costguard.web import _answer
+        from costguard.analyst_view import answer
         row = {"report_id": "r1", "result": {
             "events": [{"tool": "inspect_comparison", "result": self.outputs[0]},
                        {"tool": "inspect_case", "result": self.outputs[1]}],
             "conclusion": {"summary": "Cost rose 236.57%.", "hypotheses": [], "next_steps": [], "findings": [
                 {"text": "Output grew to 412 tokens.", "evidence": ["case:refund", "comparison"]},
                 {"text": "Latency rose 138.14%.", "evidence": ["comparison"]}]}}}
-        answer = _answer(row)
-        self.assertEqual(answer["summary_unsupported"], [])
-        self.assertEqual(answer["findings"][0]["links"], [
+        shown = answer(row)
+        self.assertEqual(shown["summary_unsupported"], [])
+        self.assertEqual(shown["findings"][0]["links"], [
             {"label": "case refund", "href": "/checks/r1#case-refund"}, {"label": "check", "href": "/checks/r1"}])
-        self.assertEqual(answer["findings"][0]["unsupported"], [])
-        self.assertEqual(answer["findings"][1]["unsupported"], ["138.14%"])
-        self.assertTrue(answer["findings"][0]["quotes_numbers"])
+        self.assertEqual(shown["findings"][0]["unsupported"], [])
+        self.assertEqual(shown["findings"][1]["unsupported"], ["138.14%"])
+        self.assertTrue(shown["findings"][0]["quotes_numbers"])
 
 if __name__ == "__main__":
     unittest.main()

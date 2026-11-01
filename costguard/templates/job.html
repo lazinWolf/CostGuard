@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Run · CostGuard{% endblock %}
 {% block content %}
-<h1>{{job.name or 'Experiment run'}}</h1>
+<h1>{{job.name or 'Run'}}</h1>
 <p class="muted">Suite {{job.suite_id}} · model <code>{{job.model}}</code> · job <code>{{job.id[:8]}}</code></p>
 
 <div class="card">
