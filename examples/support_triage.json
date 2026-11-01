@@ -24,12 +24,6 @@
   ],
   "limits": {"timeout_seconds": 180, "max_output_tokens": 400, "max_attempts": 1,
              "max_tool_calls": 0, "max_steps": 4},
-  "policy": {"max_cost_increase_percent": 20, "max_quality_drop": 0},
-  "monthly_requests": 100000,
-  "reference_pricing": {
-    "version": "reference-rates-2026-10",
-    "source": "Notional per-token rates entered for the demo. Replace them with your provider's prices; local inference has no per-token bill.",
-    "input_per_million_usd": 0.10,
-    "output_per_million_usd": 0.40
-  }
+  "policy": {"max_cost_per_success_increase_percent": 20, "max_quality_drop": 0},
+  "monthly_requests": 100000
 }

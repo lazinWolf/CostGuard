@@ -33,7 +33,8 @@
 
 {% if stats %}<div class="stats">{% for stat in stats %}
   <div class="stat"><div class="label">{{stat.label}}</div><div class="value">{{stat.value}}</div>
-    <div class="was">{{stat.was}}{% if stat.change %} · <span class="change {{stat.tone}}">{{stat.change}}</span>{% endif %}</div></div>{% endfor %}</div>{% endif %}
+    <div class="was">{{stat.was}}{% if stat.change %} · <span class="change {{stat.tone}}">{{stat.change}}</span>{% endif %}</div>
+    {% if stat.hint %}<div class="was small">{{stat.hint}}</div>{% endif %}</div>{% endfor %}</div>{% endif %}
 
 <section class="card"><h2>What changed</h2>
   {% set before = prompts.baseline %}{% set after = prompts.candidate %}

@@ -11,6 +11,7 @@
   <tr {% if nested %}class="nested"{% endif %}>
     <td><a href="/checks/{{check.id}}"><strong>{{check.candidate_name}}</strong></a>{% if check.recorded and not nested %} <span class="chip">recorded example</span>{% endif %}<br><small class="muted">vs {{check.baseline_name}} · {{check.model or ''}}</small></td>
     <td>{{pill(check.status)}}</td>
+    <td>{% if check.success_change is not none %}<span class="change {{'bad' if check.success_change|float > 0 else 'good' if check.success_change|float < 0}}">{{check.success_change|percent}}</span>{% elif check.no_successes %}<span class="change bad">no successes</span>{% else %}<span class="muted">–</span>{% endif %}</td>
     <td>{% if check.cost_change is not none %}<span class="change {{'bad' if check.cost_change|float > 0 else 'good' if check.cost_change|float < 0}}">{{check.cost_change|percent}}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
     <td>{{check.correct or '–'}}</td>
     <td class="small muted">{{check.created_at[:16]|replace('T', ' ')}}</td>
@@ -19,7 +20,7 @@
 
 {% if checks %}
 <section class="card"><div class="table-wrap"><table>
-  <tr><th>Check</th><th>Verdict</th><th>Cost per request</th><th>Answers</th><th>When</th></tr>
+  <tr><th>Check</th><th>Verdict</th><th>Per successful task</th><th>Per request</th><th>Answers</th><th>When</th></tr>
   {% for check in checks %}{{row(check)}}{% for fix in check.fixes %}{{row(fix, true)}}{% endfor %}{% endfor %}
 </table></div></section>
 {% else %}

@@ -6,7 +6,7 @@ import httpx
 
 from costguard.economics import compare_artifacts
 from costguard.execution import ExperimentSpec
-from costguard.investigation import (DIGEST_HEADER, AnalystSettings, Conclusion, EvidenceTools, FixProposals,
+from costguard.investigation import (DIGEST_HEADER, PROMPT_VERSION, SYSTEM_PROMPT, AnalystSettings, Conclusion, EvidenceTools, FixProposals,
                                      evidence_numbers, investigate, proposals_of, unsupported_numbers)
 from demo.mock_provider import analyst_message
 from tests.test_execution import artifact
@@ -225,6 +225,11 @@ class InvestigationTests(unittest.TestCase):
                                             "min_candidate_quality_score": None}
         self.assertEqual(tools.overview()["policy_limits"],
                          {"max_cost_increase_percent": "20", "max_quality_drop": "0"})
+
+    def test_overview_gives_the_analyst_the_cost_of_a_successful_task(self):
+        self.assertIn("cost_per_successful_task_usd", evidence().overview()["metrics"])
+        self.assertIn("cost per successful task", SYSTEM_PROMPT)
+        self.assertEqual(PROMPT_VERSION, "economic-investigator:v5")
 
     def test_imported_evidence_can_be_inspected_but_not_executed(self):
         tools = evidence(with_source=False)

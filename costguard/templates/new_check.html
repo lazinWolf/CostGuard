@@ -13,12 +13,12 @@
     <label for="model">Model (provider/model)</label>
     <input id="model" list="models" required placeholder="ollama/llama3.2:3b-instruct-q4_K_M"><datalist id="models"></datalist>
     <p id="gateway-note" class="muted small">Checking the gateway…</p>
-    <details><summary class="small">Prices: ${{demo.reference_pricing.input_per_million_usd}} / ${{demo.reference_pricing.output_per_million_usd}} per million tokens (notional)</summary>
+    <details><summary class="small">Prices (per million tokens): <span id="price-summary">${{demo.reference_pricing.input_per_million_usd}} in / ${{demo.reference_pricing.output_per_million_usd}} out, OpenRouter reference</span></summary>
       <div class="grid">
         <div><label for="input-price">Input USD / million tokens</label><input id="input-price" type="number" min="0" step="any" required value="{{demo.reference_pricing.input_per_million_usd}}"></div>
         <div><label for="output-price">Output USD / million tokens</label><input id="output-price" type="number" min="0" step="any" required value="{{demo.reference_pricing.output_per_million_usd}}"></div>
       </div>
-      <p class="muted small">A local model has no per-token bill, so these are notional reference rates that make the cost difference visible. Enter your provider's real prices for a cloud model.</p>
+      <p id="price-note" class="muted small">A local model has no per-token bill, so it is priced at what the same model costs on OpenRouter. Cloud models are priced there too, so every check compares like with like. Edit the rates to use your own.</p>
     </details>
   </section>
 
@@ -57,7 +57,8 @@
   <section class="card"><h2>4 · Limits</h2>
     <p class="lede">The check fails when the candidate breaks any limit.</p>
     <div class="grid">
-      <div><label for="max-cost">Cost per request may rise by at most (%)</label><input id="max-cost" type="number" min="0" step="any" value="{{demo.policy.max_cost_increase_percent}}"></div>
+      <div><label for="max-cost">Cost per successful task may rise by at most (%)</label><input id="max-cost" type="number" min="0" step="any" value="{{demo.policy.max_cost_per_success_increase_percent}}">
+        <p class="muted small" style="margin:.3rem 0 0">What one correct answer costs: cost per request divided by the share of answers that are right. Needs a score on every case.</p></div>
       <div><label for="quality-mode">Quality</label><select id="quality-mode">
         <option value="no-drop" selected>No more wrong answers than baseline</option>
         <option value="min">At least a share of answers correct</option>
@@ -68,7 +69,7 @@
   </section>
 
   <section class="card">
-    <label class="row"><input id="use-as-analyst" type="checkbox" style="width:auto"> Also use this model as the analyst that explains a failing check (it needs tool-calling support; small models usually do not){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% else %}. No analyst is set yet: tick this, or choose one on <a href="/connections">Connections</a>{% endif %}</label>
+    <label class="row" style="flex-wrap:nowrap;align-items:flex-start"><input id="use-as-analyst" type="checkbox" style="width:auto;margin-top:.3rem"><span>Also use this model as the analyst that explains a failing check (it needs tool-calling support; small models usually do not){% if analyst %}. Current analyst: <code>{{analyst.provider}}/{{analyst.model}}</code>{% else %}. No analyst is set yet: tick this, or choose one on <a href="/connections">Connections</a>{% endif %}</span></label>
     <p class="row"><button id="start" type="submit">Run the check</button>
       <span class="small muted">Calls the model twice per case and may incur provider charges. Runs at temperature 0, so differences come from the prompt.</span></p>
     <p id="message" class="notice warn" hidden></p>
@@ -103,13 +104,21 @@ evaluator.addEventListener('change',syncEvaluator);syncEvaluator();
 const mode=document.getElementById('quality-mode'), minimum=document.getElementById('quality-min');
 mode.addEventListener('change',()=>minimum.hidden=mode.value!=='min');
 
+const priceFields={input:document.getElementById('input-price'),output:document.getElementById('output-price')};
+async function priceFor(model){
+  const note=document.getElementById('price-note');
+  const rate=await fillReferenceRate(model,priceFields,note);
+  document.getElementById('price-summary').textContent=rate
+    ?'$'+rate.input_per_million_usd+' in / $'+rate.output_per_million_usd+' out, OpenRouter reference':'entered by you';
+}
+document.getElementById('model').addEventListener('change',event=>priceFor(event.target.value));
 (async()=>{
   const note=document.getElementById('gateway-note');const input=document.getElementById('model');
   try{const gateway=await api('gateway');const list=document.getElementById('models');
     gateway.models.forEach(id=>{const option=document.createElement('option');option.value=id;list.appendChild(option);});
     if(gateway.status!=='connected'){note.textContent='Gateway unavailable. Start Compose with --profile local or --profile gateway.';return;}
     const preferred=gateway.models.find(id=>id.startsWith('ollama/llama3.2'))||gateway.models.find(id=>id.startsWith('ollama/'))||gateway.models.find(id=>!id.startsWith('costguard-mock/'));
-    if(preferred&&!input.value)input.value=preferred;
+    if(preferred&&!input.value){input.value=preferred;priceFor(preferred);}
     note.textContent=gateway.models.length+' model IDs available from the gateway.';
   }catch(error){note.textContent='Unable to reach the gateway status endpoint.';}
 })();
@@ -117,7 +126,7 @@ mode.addEventListener('change',()=>minimum.hidden=mode.value!=='min');
 const value=id=>document.getElementById(id).value;
 function policy(){
   const cost=value('max-cost');
-  return {max_cost_increase_percent:cost===''?null:cost,
+  return {max_cost_per_success_increase_percent:cost===''?null:cost,
     max_quality_drop:mode.value==='no-drop'?'0':null,
     min_candidate_quality_score:mode.value==='min'?String(Number(minimum.value)/100):null};
 }

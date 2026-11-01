@@ -126,6 +126,7 @@ def fix_rows(row: dict) -> list[dict]:
         saved = db.get_comparison(fix["report_id"]) if fix and fix["report_id"] else None
         report = saved["report"] if saved else {}
         economic = report.get("economic") or {}
+        success, none = diagnosis.success_side(report, "candidate")
         rows.append({
             "label": f"Fix {'ABC'[index]}" if len(proposals) > 1 else "Fix", "name": spec["name"],
             "hypothesis": proposal["hypothesis"], "words": len(spec["system_prompt"].split()),
@@ -135,6 +136,7 @@ def fix_rows(row: dict) -> list[dict]:
             "report_id": fix and fix["report_id"], "status": report.get("status"),
             "cost": (economic.get("cost_per_request_usd") or {}).get("candidate"),
             "quality": (economic.get("quality_score") or {}).get("candidate"),
+            "cost_per_success": success, "no_successes": none,
             "cases": report.get("baseline_case_count"), "winner": False})
     winner = diagnosis.pick_winner(rows)
     for fix in rows:
@@ -173,7 +175,7 @@ def start_mock_demo() -> dict:
             pricing_version="mock-demo", input_per_million_usd=0, output_per_million_usd=0))
     return {"baseline_job_id": db.create_job(specs[0]), "candidate_job_id": db.create_job(specs[1]),
             "pricing": specs[0].pricing.model_dump(mode="json"),
-            "policy": {"max_cost_increase_percent": 10, "min_candidate_quality_score": 1}}
+            "policy": {"max_cost_per_success_increase_percent": 10, "min_candidate_quality_score": 1}}
 
 
 PENDING = "pending-check:"

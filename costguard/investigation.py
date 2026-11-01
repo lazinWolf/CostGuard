@@ -16,7 +16,7 @@ from .economics import case_cost
 from .execution import ExecutionArtifact, ExperimentSpec
 from .models import Schema
 
-PROMPT_VERSION = "economic-investigator:v4"
+PROMPT_VERSION = "economic-investigator:v5"
 DIGEST_HEADER = "Evidence from CostGuard (JSON):\n"
 SYSTEM_PROMPT = """You are CostGuard's economic investigator. CostGuard has already measured this
 comparison and sent you its evidence in the user's message: the verdict and limits, what drove the
@@ -31,9 +31,11 @@ not a prediction of changed model behavior.
 When can_propose_prompt_experiment is true, call propose_fixes with one to three different system
 prompts, each with a one-line hypothesis about why it would fix the regression. Every fix is
 measured against the original baseline under the same policy_limits, and every prompt word is paid
-on every request, so a prompt longer than the baseline's usually costs more. Vary the approach
-(restore the baseline wording, keep only what is needed, constrain the answer format) instead of
-rewording one idea. Nothing is executed by these tools.
+on every request, so a prompt longer than the baseline's usually costs more. A cheaper request is
+not a saving if fewer answers are right: fixes are ranked by cost per successful task (cost per
+request divided by the share of correct answers), so a fix must keep or restore correct answers.
+Vary the approach (restore the baseline wording, keep only what is needed, constrain the answer
+format) instead of rewording one idea. Nothing is executed by these tools.
 
 Then call finish_investigation, citing only evidence references from the supplied evidence or
 returned by tools on previous turns ("comparison", "case:<case_id>"). Write at most four short
@@ -238,7 +240,7 @@ class EvidenceTools:
         economic = report.get("economic")
         metrics = None if economic is None else {
             key: economic.get(key) for key in (
-                "cost_per_request_usd", "mean_latency_ms", "quality_score",
+                "cost_per_successful_task_usd", "cost_per_request_usd", "mean_latency_ms", "quality_score",
                 "quality_cases_compared", "monthly_projection", "assumptions",
             )
         }

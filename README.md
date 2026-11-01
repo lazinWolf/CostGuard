@@ -2,9 +2,9 @@
 
 **Find out what an AI change will cost before it ships.**
 
-A **check** runs the same cases on a baseline and a candidate version of an AI workload (a new prompt, model or tool path). CostGuard records what really happened (tokens, latency, retries, steps, outputs, quality), prices both on one explicit catalog and applies your limits: **pass**, **fail**, or **inconclusive** when the evidence is incomplete. When a check fails, an analyst model explains why from evidence CostGuard has already computed and proposes up to three fixes. One click measures every fix against the original baseline, and the cheapest one that passes your limits is highlighted.
+A **check** runs the same cases on a baseline and a candidate version of an AI workload (a new prompt, model or tool path). CostGuard records what really happened (tokens, latency, retries, steps, outputs, quality), prices both on one explicit catalog and applies your limits: **pass**, **fail**, or **inconclusive** when the evidence is incomplete. When a check fails, an analyst model explains why from evidence CostGuard has already computed and proposes up to three fixes. One click measures every fix against the original baseline, and the one that pays the least per **successful task** (cost per request divided by the share of correct answers) while staying within your limits is highlighted. A cheaper request is no saving if more answers are wrong.
 
-It is a local-first prototype. For the longer-term direction see [VISION.md](VISION.md).
+It is a local-first prototype. For the longer-term direction see [VISION.md](VISION.md). To use it day to day, read the [usage guide](docs/usage-guide.md); a scripted demo is in [docs/DEMO.md](docs/DEMO.md).
 
 ![CostGuard architecture](docs/costguard-architecture.svg)
 
@@ -18,7 +18,7 @@ make up                         # app, runner, PostgreSQL, Bifrost and Ollama
 make recorded                   # or click "Load the recorded example" on http://localhost:8000
 ```
 
-The recorded example is a real session replayed instantly, with no model, gateway or GPU: a friendlier prompt for a support-triage workload costs **+1,045 % per request** and breaks the labels (6/8 → 0/8 correct), so the check **fails** two limits. The analyst, in 2 calls and $0.002 at the notional rates, finds that the output grew from 2 to about 270 tokens and proposes three prompts. Measured against the original baseline, all three pass (0 %, −11 % and −20 % cost); the cheapest is highlighted. Replays are labelled "Recorded example" and their verdicts are recomputed from the recorded runs on every load. Re-record it with `python -m costguard record <check-id> <investigation-id>` after changing prompts or the analyst.
+The recorded example is a real session replayed instantly, with no model, gateway or GPU: a friendlier prompt for a support-triage workload costs **+1,045 % per request** and breaks the labels (6/8 → 0/8 correct), so the check **fails** two limits. The analyst, in 2 calls and $0.002 at the notional rates, finds that the output grew from 2 to about 270 tokens and proposes three prompts. Measured against the original baseline, all three pass (0 %, −11 % and −20 % cost per request). Fix C is the cheapest per request but gets one answer wrong, so per successful task Fix B (−33 %, 8/8 correct) is highlighted over Fix C (−32 %, 7/8). Replays are labelled "Recorded example" and their verdicts are recomputed from the recorded runs on every load. Re-record it with `python -m costguard record <check-id> <investigation-id>` after changing prompts or the analyst.
 
 ## How a check works
 
@@ -71,7 +71,7 @@ Open Bifrost at <http://localhost:8080> (`BIFROST_PORT` changes the port), finis
 
 ### About the prices
 
-A local model has no per-token bill, so the form prefills **notional reference rates** ($0.10 / $0.40 per million input/output tokens) to make the difference visible. They are not any provider's price. Every report names the pricing version it used, and both versions are always priced on the same catalog.
+A local model has no per-token bill, so a check prices it at what the same model costs on **OpenRouter** (`examples/reference_prices.json`; for example Llama 3.2 3B is $0.05 in / $0.33 out per million tokens), and a cloud model is priced there too, so every comparison is like with like. Choosing a model on the form or on Connections prefills its rate; edit it to use your own, and the report then says the prices were entered by you. The rates were read from OpenRouter's public models API on 2026-11-01 and are reference rates, not an invoice. The recorded example below was captured earlier at notional rates of $0.10 / $0.40 and keeps them. Every report names the pricing version it used, and both versions are always priced on the same catalog.
 
 ## Cost gate in CI
 
@@ -111,7 +111,7 @@ The product's verbs live in [`costguard/service.py`](costguard/service.py); the 
 ## Evidence and decisions
 
 - Reports compare matched cases: mean and p95 cost and latency, per-case and per-model attribution, model calls, retries, tool and agent steps, paired quality and an optional monthly projection.
-- Limits can gate cost per request, the regression percentage, projected monthly cost, latency, quality (an absolute minimum, or `max_quality_drop`: how far the candidate may score below the baseline on the same cases), retries, steps and model calls.
+- Limits can gate cost per successful task (`max_cost_per_success_increase_percent`, `max_candidate_cost_per_success_usd`; it needs a score on every case, otherwise the limit is inconclusive and a candidate with no successes fails), cost per request, the regression percentage, projected monthly cost, latency, quality (an absolute minimum, or `max_quality_drop`: how far the candidate may score below the baseline on the same cases), retries, steps and model calls.
 - The result is **inconclusive**, never a false pass, when cases fail, usage is missing or estimated, prices are missing, case sets differ, or a quality limit is set but not every case has paired scores. A failed attempt without usage counts as missing usage because it may still be billed.
 - Money is computed with exact decimals and serialized as fixed-point strings. No failed request is re-sent automatically except rate-limited (`429`) ones, which the provider did not process.
 - The analyst's calls are recorded before each call, with no automatic retry or replay after a lost lease. Spend thresholds are checked between calls and are not hard caps on in-flight charges; missing analyst usage stops the loop with unknown cost. A fix keeps the source cases, model, pricing and limits, is queued once, and is compared against the original baseline and limits. Findings are model interpretations: numerical results always come from the deterministic engine.
@@ -124,7 +124,7 @@ The product's verbs live in [`costguard/service.py`](costguard/service.py); the 
 ## Verify
 
 ```bash
-make test       # 139 unit tests in the app image
+make test       # 165 unit tests in the app image
 make e2e        # mock end-to-end workflow incl. fix search, judge and replay (starts the demo profile)
 make gate       # the CI cost gate on recorded runs
 ```

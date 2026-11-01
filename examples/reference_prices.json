@@ -1,0 +1,12 @@
+{
+  "version": "openrouter-2026-11",
+  "source": "OpenRouter list prices read from https://openrouter.ai/api/v1/models on 2026-11-01. A local model has no per-token bill, so it is priced at what the same model costs on OpenRouter; a cloud model is priced there too, so every check compares like with like. These are reference rates, not an invoice: re-read them before relying on a number.",
+  "models": [
+    {"openrouter_id": "meta-llama/llama-3.2-3b-instruct", "gateway_prefixes": ["llama3.2:3b", "llama-3.2-3b"],
+     "input_per_million_usd": "0.05", "output_per_million_usd": "0.33"},
+    {"openrouter_id": "ibm-granite/granite-4.2-8b", "gateway_prefixes": ["granite4.2:8b", "granite-4.2-8b"],
+     "input_per_million_usd": "0.06", "output_per_million_usd": "0.15"},
+    {"openrouter_id": "qwen/qwen3.8-27b", "gateway_prefixes": ["qwen3.8-27b", "qwen3.8:27b"],
+     "input_per_million_usd": "0.15", "output_per_million_usd": "1.875"}
+  ]
+}

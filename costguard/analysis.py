@@ -8,11 +8,13 @@ from .models import (
     ModelCostComparison,
     MonthlyProjection,
     PolicyResult,
+    SuccessCost,
     Workload,
 )
 
 MILLION = Decimal("1000000")
 MONEY_PRECISION = Decimal("0.00000001")
+SUCCESS_PRECISION = Decimal("0.000000000001")  # A successful task can cost a hundredth of a cent.
 METRIC_PRECISION = Decimal("0.0001")
 PERCENT_PRECISION = Decimal("0.01")
 
@@ -78,17 +80,22 @@ def _model_costs(workload: Workload, prices) -> dict[tuple[str, str], Decimal]:
     return {key: total / run_count for key, total in totals.items()}
 
 
-def _paired_quality(
-    request: ComparisonRequest,
-) -> tuple[MetricComparison | None, int]:
+def _paired_scores(request: ComparisonRequest) -> list[tuple[Decimal, Decimal]]:
+    """(baseline, candidate) score for each case scored on both sides."""
     baseline = {run.case_id: run for run in request.baseline.runs}
     candidate = {run.case_id: run for run in request.candidate.runs}
-    paired = [
+    return [
         (baseline[case_id].quality_score, candidate[case_id].quality_score)
         for case_id in sorted(baseline)
         if baseline[case_id].quality_score is not None
         and candidate[case_id].quality_score is not None
     ]
+
+
+def _paired_quality(
+    request: ComparisonRequest,
+) -> tuple[MetricComparison | None, int]:
+    paired = _paired_scores(request)
     if not paired:
         return None, 0
     return (
@@ -101,12 +108,57 @@ def _paired_quality(
     )
 
 
+def _per_success(cost: Decimal, mean_score: Decimal) -> Decimal | None:
+    return _round(cost / mean_score, SUCCESS_PRECISION) if mean_score else None
+
+
+def _success_cost(request: ComparisonRequest, baseline_cost: Decimal, candidate_cost: Decimal) -> SuccessCost | None:
+    """What one correct answer costs on each side: mean cost per request over the mean quality score.
+
+    A fractional score counts as a partial success. Retries are inside the cost; judge and analyst
+    spend are not. A side with no success has no cost per success (None). The metric is absent
+    unless every case is scored on both sides: a subset cannot vouch for the rest.
+    """
+    pairs = _paired_scores(request)
+    if len(pairs) < len(request.baseline.runs):
+        return None
+    baseline = _per_success(baseline_cost, _mean([before for before, _ in pairs]))
+    candidate = _per_success(candidate_cost, _mean([after for _, after in pairs]))
+    if baseline is None or candidate is None:
+        return SuccessCost(baseline=baseline, candidate=candidate, delta=None, delta_percent=None)
+    return SuccessCost(baseline=baseline, candidate=candidate, delta=candidate - baseline,
+                       delta_percent=_round((candidate - baseline) / baseline * 100, PERCENT_PRECISION))
+
+
+def _success_limits(policy, success: SuccessCost | None, violations: list[str], unknowns: list[str]) -> None:
+    if success is None:
+        unknowns.append("cost per successful task needs every case scored on both sides")
+        return
+    if success.candidate is None:
+        violations.append("the candidate has no successful tasks")
+    elif (policy.max_candidate_cost_per_success_usd is not None
+            and success.candidate > policy.max_candidate_cost_per_success_usd):
+        violations.append(f"candidate cost per successful task ${success.candidate:f} exceeds "
+                          f"${policy.max_candidate_cost_per_success_usd:f}")
+    limit = policy.max_cost_per_success_increase_percent
+    if limit is None or success.candidate is None:
+        return
+    if success.baseline is None:
+        unknowns.append("the baseline has no successful tasks to compare cost per successful task with")
+    elif success.baseline == 0:
+        if success.candidate > 0:
+            violations.append("cost per successful task increased from a zero-cost baseline")
+    elif success.delta_percent > limit:
+        violations.append(f"cost per successful task increase {success.delta_percent}% exceeds {limit}%")
+
+
 def _policy_result(
     request: ComparisonRequest,
     baseline_cost: Decimal,
     candidate_cost: Decimal,
     quality: MetricComparison | None,
     quality_cases: int,
+    success: SuccessCost | None,
 ) -> PolicyResult:
     policy = request.policy
     if policy is None or not any(value is not None for value in policy.model_dump().values()):
@@ -138,6 +190,9 @@ def _policy_result(
         )
 
     unknowns: list[str] = []
+    if (policy.max_cost_per_success_increase_percent is not None
+            or policy.max_candidate_cost_per_success_usd is not None):
+        _success_limits(policy, success, violations, unknowns)
     if any(getattr(policy, field) is not None for field in (
         "max_candidate_mean_latency_ms", "max_candidate_model_calls_per_case",
         "max_candidate_retries_per_case", "max_candidate_tool_steps_per_case",
@@ -236,6 +291,7 @@ def compare_workloads(request: ComparisonRequest) -> ComparisonReport:
         )
 
     quality, quality_cases_compared = _paired_quality(request)
+    success = _success_cost(request, baseline_mean_cost, candidate_mean_cost)
     assumptions = [
         "Every workload case has equal weight.",
         "Costs use the supplied pricing catalog and observed token counts.",
@@ -243,6 +299,11 @@ def compare_workloads(request: ComparisonRequest) -> ComparisonReport:
     if quality is not None:
         assumptions.append(
             "Quality compares only cases scored in both baseline and candidate."
+        )
+    if success is not None:
+        assumptions.append(
+            "Cost per successful task is mean cost per request divided by mean quality score; "
+            "judge and analyst spend are excluded."
         )
     if request.monthly_requests is not None:
         assumptions.append(
@@ -262,10 +323,11 @@ def compare_workloads(request: ComparisonRequest) -> ComparisonReport:
         ),
         quality_score=quality,
         quality_cases_compared=quality_cases_compared,
+        cost_per_successful_task_usd=success,
         case_costs=case_costs,
         model_costs=model_costs,
         monthly_projection=monthly_projection,
         policy=_policy_result(request, baseline_mean_cost, candidate_mean_cost, quality,
-                              quality_cases_compared),
+                              quality_cases_compared, success),
         assumptions=assumptions,
     )

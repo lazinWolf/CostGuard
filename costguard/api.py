@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
 from . import db, gateway, service
-from .checks import CheckInput
+from .checks import CheckInput, reference_rate
 from .execution import ExecutionArtifact, ExperimentSpec
 from .investigation import AnalystSettings, InvestigationInput
 from .models import ComparisonPolicy, PricingCatalog, Schema
@@ -114,6 +114,12 @@ def readiness():
 @router.get("/gateway")
 def gateway_status():
     return gateway.status()
+
+
+@router.get("/reference-prices")
+def reference_prices(model: str):
+    """The OpenRouter rate for a gateway model ID, or null when none is listed, so forms can prefill prices."""
+    return reference_rate(model)
 
 
 @router.post("/suites")

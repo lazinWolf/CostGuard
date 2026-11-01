@@ -2,7 +2,7 @@ import unittest
 
 from decimal import Decimal
 
-from costguard.diagnosis import (case_rows, changed_cases, format_usd, judge_spend, limit_rows,
+from costguard.diagnosis import (case_rows, changed_cases, format_usd, headline, judge_spend, limit_rows,
                                  limit_text, pick_winner, prompt_change)
 from costguard.execution import Judgement
 from costguard.economics import compare_artifacts
@@ -55,6 +55,30 @@ class LimitTests(unittest.TestCase):
         self.assertEqual({row["status"] for row in limit_rows(report, policy)}, {"unknown"})
         self.assertEqual(limit_rows(report, policy)[0]["measured"], "not measured")
 
+    def test_cost_per_successful_task_limits_read_the_stored_metric(self):
+        policy = {"max_cost_per_success_increase_percent": "20", "max_candidate_cost_per_success_usd": "0.05"}
+        rows = {row["key"]: row for row in limit_rows(stored_report(policy), policy)}
+        self.assertEqual(rows["max_cost_per_success_increase_percent"]["limit"],
+                         "cost per successful task may rise by at most 20%")
+        self.assertEqual((rows["max_cost_per_success_increase_percent"]["status"],
+                          rows["max_cost_per_success_increase_percent"]["measured"]), ("fail", "+200.00%"))
+        self.assertEqual((rows["max_candidate_cost_per_success_usd"]["status"],
+                          rows["max_candidate_cost_per_success_usd"]["measured"]), ("pass", "$0.03"))
+
+    def test_a_candidate_without_successes_breaks_the_limit_and_says_so(self):
+        policy = {"max_cost_per_success_increase_percent": "20", "max_candidate_cost_per_success_usd": "5"}
+        report = stored_report(policy)
+        report["economic"]["cost_per_successful_task_usd"].update(candidate=None, delta=None, delta_percent=None)
+        for row in limit_rows(report, policy):
+            self.assertEqual((row["status"], row["measured"]), ("fail", "no successful tasks"))
+
+    def test_the_metric_is_not_measured_for_a_report_that_lacks_it(self):
+        policy = {"max_cost_per_success_increase_percent": "20"}
+        report = stored_report(policy)
+        del report["economic"]["cost_per_successful_task_usd"]
+        self.assertEqual([(row["status"], row["measured"]) for row in limit_rows(report, policy)],
+                         [("unknown", "not measured")])
+
     def test_limits_that_were_not_set_are_not_listed(self):
         policy = {"max_cost_increase_percent": None, "max_quality_drop": None}
         self.assertEqual(limit_rows(stored_report({"max_cost_increase_percent": "20"}), policy), [])
@@ -103,6 +127,34 @@ class FixSearchTests(unittest.TestCase):
         self.assertEqual(pick_winner([fix("a", "pass", "0.0001", 40), fix("b", "pass", "0.0001", 12)]), "b")
         self.assertIsNone(pick_winner([fix("a", "fail", "0.0001", 10), fix("b", None, None, 10)]))
         self.assertIsNone(pick_winner([]))
+
+    def test_the_winner_pays_the_least_per_successful_task_not_per_request(self):
+        fix = lambda name, cost, per_success, words: {"name": name, "status": "pass", "cost": cost,
+                                                      "cost_per_success": per_success, "words": words}
+        # b is the cheaper request but gets fewer answers right, so a pays less per success.
+        self.assertEqual(pick_winner([fix("a", "0.00000815", "0.00000793", 20), fix("b", "0.00000700", "0.00000900", 10)]), "a")
+        self.assertEqual(pick_winner([fix("a", "0.1", "0.2", 40), fix("b", "0.9", "0.2", 12)]), "b")
+        # A passing fix with no cost per success is left out while another has one, and used when none does.
+        self.assertEqual(pick_winner([fix("a", "0.1", None, 5), fix("b", "0.9", "0.2", 12)]), "b")
+        self.assertEqual(pick_winner([fix("a", "0.3", None, 5), fix("b", "0.1", None, 12)]), "b")
+
+
+class HeadlineTests(unittest.TestCase):
+    def test_the_first_number_is_what_a_successful_task_costs(self):
+        stat = headline({"baseline_case_count": 1, **{"economic": stored_report({})["economic"]}}, None)[0]
+        self.assertEqual((stat["label"], stat["value"], stat["was"], stat["change"], stat["tone"]),
+                         ("Cost per successful task", "$0.03", "was $0.01", "+200.00%", "bad"))
+
+    def test_no_successes_is_stated_not_hidden(self):
+        report = stored_report({})
+        report["economic"]["cost_per_successful_task_usd"].update(candidate=None, delta=None, delta_percent=None)
+        stat = headline(report, None)[0]
+        self.assertEqual((stat["value"], stat["tone"]), ("No successes", "bad"))
+
+    def test_a_report_without_the_metric_leads_with_cost(self):
+        report = stored_report({})
+        del report["economic"]["cost_per_successful_task_usd"]
+        self.assertEqual(headline(report, None)[0]["label"], "Cost per month at 1,000 requests")
 
 
 class JudgeSpendTests(unittest.TestCase):

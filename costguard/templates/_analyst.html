@@ -24,8 +24,8 @@
     {% if analyst.active %}<div class="word">Working</div><p>It reads the evidence step by step (see “What the analyst did”). This page updates by itself.</p>
     {% elif item.state != 'completed' %}<div class="word">Stopped</div><p>{{item.error}}</p><p class="small">Small local models often can't follow the tool workflow. Choose a stronger analyst on <a href="/connections">Connections</a>, then ask again.</p>
     {% elif winner %}<div class="word">{{winner.label}} passes</div>
-      <p>Against the original baseline: {{winner.cost|usd}} per request (baseline {{analyst.scoreboard[0].cost|usd}}){% if winner.quality is not none %}, {{(winner.quality|float * winner.cases)|round|int}} of {{winner.cases}} answers correct (baseline {{(analyst.scoreboard[0].quality|float * analyst.scoreboard[0].cases)|round|int}}){% endif %}.
-      {% if fixes|length > 1 %}It is the cheapest of the {{fixes|selectattr('status', 'equalto', 'pass')|list|length}} fixes that stay within every limit.{% endif %}</p>
+      <p>Against the original baseline: {% if winner.cost_per_success is not none %}{{winner.cost_per_success|usd}} per successful task (baseline {{'none' if analyst.scoreboard[0].no_successes else analyst.scoreboard[0].cost_per_success|usd}}), {% endif %}{{winner.cost|usd}} per request (baseline {{analyst.scoreboard[0].cost|usd}}){% if winner.quality is not none %}, {{(winner.quality|float * winner.cases)|round|int}} of {{winner.cases}} answers correct (baseline {{(analyst.scoreboard[0].quality|float * analyst.scoreboard[0].cases)|round|int}}){% endif %}.
+      {% if fixes|length > 1 %}It pays the least per successful task of the {{fixes|selectattr('status', 'equalto', 'pass')|list|length}} fixes that stay within every limit.{% endif %}</p>
       <p class="row"><a class="button" href="/checks/{{winner.report_id}}">Open the {{winner.label}} check</a></p>
     {% elif analyst.measured %}<div class="word">No fix passes</div><p>{{'None of the ' ~ fixes|length ~ ' fixes' if fixes|length > 1 else 'The fix'}} stayed within every limit. Open one below to see why, and ask the analyst again there.</p>
     {% elif analyst.testing %}<div class="word">Testing the fixes</div><p>{{fixes|selectattr('state', 'in', ['measured', 'failed'])|list|length}} of {{fixes|length}} measured. Each is compared with the original baseline as soon as it finishes. This page updates by itself.</p>
@@ -48,7 +48,7 @@
 
   {% if fixes %}
     <h3 id="proposal">{{'Proposed fixes' if fixes|length > 1 else 'Proposed fix'}}</h3>
-    <p class="muted small">Prompt length: baseline {{prompts.baseline.split()|length}} words · this version {{prompts.candidate.split()|length}} words. Every prompt word is paid on every request. The best fix is the cheapest one that stays within every limit.</p>
+    <p class="muted small">Prompt length: baseline {{prompts.baseline.split()|length}} words · this version {{prompts.candidate.split()|length}} words. Every prompt word is paid on every request. The best fix pays the least per successful task among those that stay within every limit.</p>
     {% for fix in fixes %}{% set proposal = analyst.proposals[loop.index0] %}
     <details {{'open' if fixes|length == 1}}><summary><strong>{{fix.label}}</strong> · {{fix.hypothesis}} <span class="muted small">({{fix.words}} words)</span></summary>
       {% if proposal.spec.system_prompt == prompts.baseline %}<p class="notice">This prompt is identical to the baseline prompt. Running it confirms that reverting fixes the regression.</p>
@@ -60,15 +60,15 @@
     {% endfor %}
 
     <h3>{{'Where things stand' if not analyst.measured else 'Did the fixes work?'}}</h3>
-    <div class="table-wrap"><table><tr><th>Version</th><th>Cost per request</th><th>Correct answers</th><th>Prompt words</th><th>Against the baseline</th><th></th></tr>
-    {% for v in analyst.scoreboard %}<tr><td><strong>{{v.label}}</strong><br><small class="muted">{{v.name}}</small></td><td>{{v.cost|usd}}</td>
+    <div class="table-wrap"><table><tr><th>Version</th><th>Per successful task</th><th>Per request</th><th>Correct answers</th><th>Prompt words</th><th>Against the baseline</th><th></th></tr>
+    {% for v in analyst.scoreboard %}<tr><td><strong>{{v.label}}</strong><br><small class="muted">{{v.name}}</small></td><td>{{'no successes' if v.no_successes else v.cost_per_success|usd}}</td><td>{{v.cost|usd}}</td>
       <td>{% if v.quality is not none %}{{(v.quality|float * v.cases)|round|int}} / {{v.cases}}{% else %}unknown{% endif %}</td>
       <td>{{v.words}}</td><td>{% if v.status %}{{pill(v.status)}}{% endif %}</td><td class="small"><a href="/artifacts/{{v.id}}">open run</a></td></tr>{% endfor %}
     {% for fix in fixes %}<tr><td><strong>{{fix.label}}</strong>{% if fix.winner %} <span class="chip">best fix</span>{% endif %}<br><small class="muted">{{fix.name}}</small></td>
-      {% if fix.state == 'measured' %}<td>{{fix.cost|usd}}</td>
+      {% if fix.state == 'measured' %}<td>{{'no successes' if fix.no_successes else fix.cost_per_success|usd}}</td><td>{{fix.cost|usd}}</td>
         <td>{% if fix.quality is not none %}{{(fix.quality|float * fix.cases)|round|int}} / {{fix.cases}}{% else %}unknown{% endif %}</td>
         <td>{{fix.words}}</td><td>{{pill(fix.status)}}</td><td class="small"><a href="/checks/{{fix.report_id}}">open check</a></td>
-      {% else %}<td colspan="2" class="muted">{{'Running: ' ~ fix.progress ~ ' of ' ~ fix.total ~ ' cases' if fix.state == 'running' else 'The run did not finish.' if fix.state == 'failed' else 'Not run yet.'}}</td>
+      {% else %}<td colspan="3" class="muted">{{'Running: ' ~ fix.progress ~ ' of ' ~ fix.total ~ ' cases' if fix.state == 'running' else 'The run did not finish.' if fix.state == 'failed' else 'Not run yet.'}}</td>
         <td>{{fix.words}}</td><td>{% if fix.state == 'failed' %}{{pill('failed')}}{% endif %}</td><td class="small">{% if fix.job_id %}<a href="/jobs/{{fix.job_id}}">watch run</a>{% endif %}</td>{% endif %}</tr>{% endfor %}
     </table></div>
   {% endif %}

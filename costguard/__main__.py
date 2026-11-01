@@ -53,6 +53,11 @@ def _markdown(report) -> str:
         if economic.quality_score:
             rows.append((f"Quality ({economic.quality_cases_compared} paired cases)", economic.quality_score, None))
         lines += ["| Metric | Baseline | Candidate | Change |", "| --- | ---: | ---: | ---: |"]
+        success = economic.cost_per_successful_task_usd
+        if success:  # A side with no successes has no cost per success.
+            lines.append("| Cost per successful task (USD) | " + " | ".join(
+                [_plain(value) if value is not None else "no successes" for value in (success.baseline, success.candidate)]
+                + [_change(success)]) + " |")
         lines += [f"| {name} | {_plain(metric.baseline, places)} | {_plain(metric.candidate, places)} | {_change(metric)} |"
                   for name, metric, places in rows]
         lines += ["", f"Priced with `{economic.pricing_version}` on {economic.cases_compared} matched cases.", ""]
@@ -78,7 +83,7 @@ def _wait(getter, item_id: str, label: str, detail=lambda item: "") -> dict:
 
 
 def _demo(args) -> int:
-    reference = checks.preset()["reference_pricing"]
+    reference = checks.reference_rate(args.model) or checks.preset()["reference_pricing"]
     started = service.create_check(checks.demo_check(
         args.model,
         reference["input_per_million_usd"] if args.input_price is None else args.input_price,

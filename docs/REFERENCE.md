@@ -29,7 +29,7 @@ Token pricing is an internal primitive, not the product. The unit of analysis is
 
 - **Deterministic decisions.** Pass, fail and inconclusive come from stored observations and an explicit price catalog. LLMs (the analyst and the judge) produce *evidence and hypotheses*, never the verdict.
 - **Missing evidence is not a pass.** Failed cases, missing or estimated usage, absent prices or unscored answers make a result *inconclusive*.
-- **Explicit assumptions.** Both variants are priced on one versioned catalog. Local inference has no bill, so the demo uses labelled *notional* rates. Monthly projections state their traffic assumption. Repricing says it holds behaviour fixed.
+- **Explicit assumptions.** Both variants are priced on one versioned catalog. Local inference has no bill, so live checks use labelled OpenRouter *reference rates*. Monthly projections state their traffic assumption. Repricing says it holds behaviour fixed.
 - **Measured, not trusted.** A fix proposed by a model is only a hypothesis until it has been run against the original baseline under the same limits.
 - **Provider-neutral.** Every model call goes through an OpenAI-compatible gateway (Bifrost); provider keys stay there.
 - **Smallest coherent increments.** [AGENTS.md](../AGENTS.md) asks for focused increments, tests for changed behaviour and documentation of only what is implemented.
@@ -85,16 +85,16 @@ Earlier-round decisions that still hold: trim the surface and add *what-if price
 
 - **Checks.** Edit two prompts, the cases, scoring and limits in the browser (or via the API). A runner executes both versions; the comparison is saved server-side. Presets: *support triage* (label match) and *refund replies* (judged).
 - **Scoring.** `exact`, `normalized`, `llm_judge`, held in a registry.
-- **Analysis.** Paired-case cost and latency, per-model and per-case attribution, p95 cost and latency, model calls, retries, tool and agent steps, monthly projection, what-if repricing, and ten policy limits.
+- **Analysis.** Paired-case cost and latency, per-model and per-case attribution, p95 cost and latency, model calls, retries, tool and agent steps, monthly projection, what-if repricing, cost per successful task, and twelve policy limits.
 - **Analyst.** Starts from a digest; has three tools; proposes one to three prompts; its spend is recorded apart from the workload's; every number in its findings is checked against the evidence it saw.
-- **Fix search.** One click measures every proposed fix against the original baseline; the cheapest passing fix is highlighted.
+- **Fix search.** One click measures every proposed fix against the original baseline; the passing fix with the lowest cost per successful task is highlighted.
 - **Replay.** A recorded real session loads instantly (`make recorded`, the home page button, or the API).
 - **One service layer** behind the browser, HTTP API, CLI, MCP server and runner.
 - **Events and telemetry.** One JSON line per event through pluggable sinks. With `make observe`, OpenTelemetry traces and metrics go to a provisioned Grafana dashboard (§12).
 - **MCP.** `list_checks`, `get_check`, `explain_check` (no model call), plus run, report and investigation reads; `start_check` is gated.
 - **Own evidence.** Import a versioned execution artifact, or capture one with `costguard.hook`.
 - **DevOps.** Docker Compose profiles, GitHub Actions (image, unit tests, cost gate, end-to-end), Makefile shortcuts.
-- **Tests.** 139 unit tests plus a mock end-to-end workflow.
+- **Tests.** 165 unit tests plus a mock end-to-end workflow.
 
 Roughly 6,400 lines of Python across the package, demo provider, entry point and tests.
 
@@ -237,17 +237,23 @@ Conventions worth knowing:
 
 1. Collects reasons the result cannot be trusted (§ below).
 2. If comparable, converts both sides into workloads and calls `analysis.compare_workloads`: mean cost per request, mean latency, per-case and per-model cost deltas, **paired** quality (only cases scored on both sides with the same evaluator), optional monthly projection (`mean cost × requests`).
+
+   **Cost per successful task** (`ComparisonReport.cost_per_successful_task_usd`) is the mean cost per request divided by the mean quality score on each side, so a fractional judge score counts as a partial success. Retries are inside the cost; judge and analyst spend are not. It is *absent* unless every case is scored on both sides (a scored subset cannot vouch for the rest), and a side with no success has no value (`null`), never a guessed one. Reports saved before it existed simply lack the field.
 3. Adds p95 cost and latency, behaviour metrics (model calls, retries = calls with `attempt > 1`, tool steps, agent steps per case) and "contributors" (the largest positive deltas).
 4. Applies the policy: economic limits inside `analysis`, behaviour limits in `economics`.
 
 **The result is `inconclusive`, never a false pass, when:** suite IDs or case-ID sets differ; any call has missing usage (a failed attempt without usage counts, because it may still be billed); any case did not complete; any case has no model call; any call uses *estimated* usage; a price is missing; or a quality limit is set but not every case has paired scores.
 
+The two cost-per-success limits follow the same rule as quality: unscored cases make them inconclusive; a candidate with no successes breaks either (it is unboundedly dear per success); a baseline with none leaves the percentage limit inconclusive because there is nothing to compare with.
+
 Verdict values: `pass`, `fail`, `inconclusive`, `not_evaluated` (no limits set).
 
-### The ten limits
+### The twelve limits
 
 | Policy field | Reads as |
 | --- | --- |
+| `max_cost_per_success_increase_percent` | cost per successful task may rise by at most N % |
+| `max_candidate_cost_per_success_usd` | candidate cost per successful task at most $N |
 | `max_cost_increase_percent` | cost per request may rise by at most N % |
 | `max_candidate_cost_per_request_usd` | candidate cost per request at most $N |
 | `max_monthly_cost_usd` | projected monthly cost at most $N |
@@ -295,7 +301,9 @@ Behaviours that are deliberate:
 
 An optional model that explains a failing check and proposes fixes. It **cannot run anything**; it can only call read-only tools and *propose*; a person (or the "Test the fixes" button) queues the runs.
 
-### Protocol v4 (`PROMPT_VERSION = "economic-investigator:v4"`)
+### Protocol (`PROMPT_VERSION = "economic-investigator:v5"`)
+
+The tool protocol dates from v4; v5 added cost per successful task to the evidence and to the instructions.
 
 1. **Digest first.** `EvidenceTools.digest()` builds a JSON document from what CostGuard already computed: the verdict and `policy_limits`, metrics, behaviour deltas, the biggest case and model deltas, pricing, both configurations, `cost_drivers`, `prompt_change`, and the changed cases with outputs in full. It is the first user message after `DIGEST_HEADER`, and is stored in `result["digest"]`. Everything in it counts as inspected evidence.
 2. **Three tools** (registry in `investigation.py`):
@@ -310,7 +318,7 @@ The system prompt tells the analyst the changed cases are shown in full, to trea
 
 ### Fix search and the winner rule
 
-`service.test_fixes` creates one job per proposed spec (idempotent). When each finishes, `finish_fix` compares it with the **original baseline** under the **original prices and limits** and records the report in `investigations.fixes`. `diagnosis.pick_winner` then chooses **the cheapest fix that passes every limit, ties to the shorter prompt**; if none pass, none is highlighted and the page offers to ask the analyst again on the closest fix. The model proposes; measurement and a fixed rule decide.
+`service.test_fixes` creates one job per proposed spec (idempotent). When each finishes, `finish_fix` compares it with the **original baseline** under the **original prices and limits** and records the report in `investigations.fixes`. `diagnosis.pick_winner` then chooses **the fix that passes every limit and pays the least per successful task, ties to the shorter prompt** (a passing fix without that metric ranks by cost per request, but only when no passing fix has it); if none pass, none is highlighted and the page offers to ask the analyst again on the closest fix. The model proposes; measurement and a fixed rule decide.
 
 ### Older shapes
 
@@ -479,7 +487,7 @@ An 8 GB GPU holds Granite 4.2 8B (6.6 GB) only with the 8-bit KV cache and 16K c
 
 ## 15. Testing
 
-- **Unit tests** (139; `make test` runs them in the app image: `python -m unittest discover`): `test_analysis`, `test_execution`, `test_evaluators`, `test_checks`, `test_diagnosis`, `test_investigation`, `test_service`, `test_web`, `test_recorded`, `test_mcp`, `test_events`, `test_telemetry` (in-memory exporters; no collector needed). They patch out the database and gateway calls, so they run in the app image without the rest of the stack.
+- **Unit tests** (165; `make test` runs them in the app image: `python -m unittest discover`): `test_analysis`, `test_execution`, `test_evaluators`, `test_checks`, `test_diagnosis`, `test_investigation`, `test_service`, `test_web`, `test_recorded`, `test_mcp`, `test_events`, `test_telemetry` (in-memory exporters; no collector needed). They patch out the database and gateway calls, so they run in the app image without the rest of the stack.
 - **End-to-end** (`tests/e2e.py`, `make e2e`): against the demo stack with the mock provider, it covers a check from creation to verdict, the digest-first analyst, fix search (statuses pass/fail with one winner), a judged check, recorded replay, the UI pages, the CLI and MCP (including the refusal of `start_check`). A traceback from that expected refusal in the log is normal.
 - **Gate test** (`make gate`): exit 1 for the candidate and 0 for the fix.
 - **The mock provider is a fixture, not a model.** It proves the workflow, not reasoning quality. Its scripted fix B legitimately fails the 10 % cost limit, which is why the e2e expects `["pass", "fail"]`.
@@ -493,6 +501,7 @@ An 8 GB GPU holds Granite 4.2 8B (6.6 GB) only with the 8-bit KV cache and 16K c
 | --- | --- | --- |
 | Deterministic engine decides; LLMs advise | A model's explanation can be wrong; money and verdicts must be reproducible | Letting the analyst grade its own fix |
 | Measure every fix against the **original baseline** | A fix diffed against the candidate can look better than the baseline it must beat | Comparing a fix to the candidate |
+| Rank by **cost per successful task**, not per request | A prompt that is cheaper per request but gets answers wrong is not a saving; the unit that matters is a right answer | Cost per request alone (it crowned the fix with one wrong answer); quality as a separate tie-breaker |
 | Offer up to **three** fixes and pick by rule | One fix made the demo a coin flip (2 of 3 live fixes passed earlier); a rule keeps it explainable | Trusting the analyst's own ranking |
 | **Digest-first** analyst | Removes minutes of rediscovery, works with weaker models, cheaper and testable | Letting the model explore with tools alone |
 | Remove `inspect_comparison` | A live model kept re-calling it and timed out | Prompt wording alone |
@@ -509,7 +518,7 @@ An 8 GB GPU holds Granite 4.2 8B (6.6 GB) only with the 8-bit KV cache and 16K c
 | Settings table for pending plans and replay marks | No migration, smallest increment | A `checks` table (deferred) |
 | `max_quality_drop` rather than a fixed quality bar | It is a regression test; a weak workload model makes any fixed bar arbitrary | Absolute thresholds only (still supported) |
 | Temperature 0 | Differences come from the prompt, not sampling | Default sampling |
-| Notional prices for local models | Makes the difference visible; labelled as not a provider price; CI evidence uses real catalog prices | Showing $0 |
+| Price local and cloud models at their OpenRouter rate | A local model has no bill, so it is priced as the same model on OpenRouter and every comparison is like with like; the report says the rates are reference rates, and edited rates are labelled as entered. The recorded example and the CI evidence keep the prices they were captured with | Notional rates ($0.10 / $0.40); showing $0 |
 | No automatic replay of paid calls, except 429 | A failed call may already have been billed; 429 was rejected before processing | Blanket retries |
 | Rate-limit waits excluded from latency | Latency should reflect the model, not the provider's quota | Counting waits |
 | `start_check` over MCP is opt-in | The previous posture was "never initiates paid calls"; one flag keeps that default | Always allowing it, or never |
@@ -527,7 +536,7 @@ Recorded on a laptop RTX 3070 Ti (`llama3.2:3b` workload at temperature 0, `gran
 
 - **The regression.** The "helpful" candidate prompt cost **+1,044.82 %** per request ($0.89 → $10.22 per month at 100,000 requests), and quality fell from **6/8 to 0/8**. Output grew from 2 to about 226 tokens per case. Both limits (cost +20 %, no fewer correct answers) broke.
 - **The analyst.** 2 calls, **$0.0022**; three proposed prompts of 30, 22 and 16 words (the baseline's has 30).
-- **The fixes**, against the original baseline: A **0 %** cost, 6/8; B **−11.20 %**, 8/8; C **−20.17 %**, 7/8. All pass; C is the cheapest and is highlighted.
+- **The fixes**, against the original baseline: A **0 %** cost per request, 6/8; B **−11.20 %**, 8/8; C **−20.17 %**, 7/8. All pass. Per successful task A is 0 %, B **−33.4 %**, C **−31.6 %**: C is the cheapest request but gets one answer wrong, so B is highlighted. (The analyst in this recording ran protocol v4 and was shown the per-request limit; the fixture's comparison limits were switched to the per-success one afterwards, and verdicts and the winner are recomputed on every load.)
 - **Across two live sessions, 5 of 6 proposed fixes passed;** the failing one scored 5/8. A small sample, so fix search does not guarantee a pass.
 - **Cloud (Groq, `qwen/qwen3.8-27b`, catalog prices):** the same change cost **+2,204 %** and quality went 1 → 0; these runs are the evidence behind the CI gate (about 1.5 minutes per job).
 - **Judged refund preset:** fails on cost (+386.79 %); the 3B judge's weaknesses are described in §10.
@@ -544,7 +553,7 @@ Live problems and fixes during the overhaul: analyst run 1 timed out (HTTP 504 a
 - **Judges and analysts are models.** Small local models are weak judges; analyst findings are interpretations (the number check reports absence, not falsehood). Nothing a model says moves a verdict.
 - **Fix search is not a guarantee** (5 of 6 passed live), and it multiplies the fix-run cost by up to three.
 - **Spend thresholds are not hard caps** on in-flight charges; missing analyst usage stops the loop with unknown cost.
-- **Prices.** Local prices are notional. Repricing holds behaviour fixed and is not a prediction.
+- **Prices.** Local prices are OpenRouter reference rates (read 2026-11-01), not an invoice, and the quantized local model is not the hosted one. The recorded example keeps its original notional rates. Repricing holds behaviour fixed and is not a prediction.
 - **Hardware.** Battery power and a shared GPU badly affect live timings. The recorded example avoids this.
 - **Dev data.** A development database accumulates test checks beside the recorded example; wiping it and running `make recorded` gives a clean start.
 
@@ -584,10 +593,11 @@ Said plainly so the docs do not over-promise: Prometheus scraping and Langfuse-s
 | **Analyst** | A model that reads a check's evidence and proposes fixes; it cannot run anything |
 | **Digest** | The evidence CostGuard computes and sends the analyst up front |
 | **Fix** | A prompt the analyst proposed, measured as a check against the original baseline |
-| **Winner** | The cheapest fix that passes every limit (ties go to the shorter prompt) |
+| **Cost per successful task** | Mean cost per request divided by mean quality score; a fractional score counts as a partial success |
+| **Winner** | The fix that passes every limit and pays the least per successful task (ties go to the shorter prompt) |
 | **Judge** | A model that scores answers against a rubric when there is no single label |
 | **Artifact** | A saved, versioned record of one run (calls, usage, outputs, scores) |
-| **Notional price** | A reference rate for local models, which have no per-token bill |
+| **Reference rate** | The OpenRouter price of a model, used for local models (which have no per-token bill) and cloud models alike; `examples/reference_prices.json` |
 | **Recorded example** | A real session replayed without any model; verdicts recomputed on load |
 | **Gateway (Bifrost)** | The OpenAI-compatible proxy every model call goes through |
 | **Lease** | A time-limited claim on a job or investigation, renewed by a heartbeat |

@@ -37,7 +37,9 @@ class CheckInputTests(unittest.TestCase):
 
     def test_the_demo_check_matches_the_demo_suite(self):
         demo = checks.preset()
-        baseline, candidate, pricing = checks.build_specs(checks.demo_check("ollama/llama3.2", 0.1, 0.4))
+        rate = demo["reference_pricing"]
+        baseline, candidate, pricing = checks.build_specs(checks.demo_check(
+            "ollama/llama3.2:3b", rate["input_per_million_usd"], rate["output_per_million_usd"]))
         self.assertEqual(baseline.suite_id, "support-triage")
         self.assertEqual(baseline.evaluator, "normalized")
         self.assertEqual((baseline.temperature, candidate.temperature), (0, 0))
@@ -86,6 +88,40 @@ class JudgedCheckTests(unittest.TestCase):
             self.assertEqual(checks.build_specs(data)[0].evaluator, demo["evaluator"], name)
         self.assertEqual([item["name"] for item in checks.presets()], ["support-triage", "refund-reply"])
         self.assertEqual(checks.preset("unknown")["suite_id"], "support-triage")
+
+
+class ReferencePriceTests(unittest.TestCase):
+    def test_local_and_cloud_models_are_priced_at_their_openrouter_rate(self):
+        for model, openrouter_id, rates in (
+                ("ollama/llama3.2:3b-instruct-q4_K_M", "meta-llama/llama-3.2-3b-instruct", ("0.05", "0.33")),
+                ("ollama/granite4.2:8b-q4_K_M", "ibm-granite/granite-4.2-8b", ("0.06", "0.15")),
+                ("groq/qwen3.8-27b", "qwen/qwen3.8-27b", ("0.15", "1.875"))):
+            rate = checks.reference_rate(model)
+            self.assertEqual((rate["model"], rate["input_per_million_usd"], rate["output_per_million_usd"]),
+                             (openrouter_id, *rates), model)
+
+    def test_a_model_without_a_listed_rate_has_none(self):
+        self.assertIsNone(checks.reference_rate("ollama/mystery:7b"))
+        self.assertIsNone(checks.reference_rate("costguard-mock/analyst"))
+
+    def test_presets_prefill_the_rate_of_their_default_model(self):
+        for name in checks.PRESETS:
+            reference = checks.preset(name)["reference_pricing"]
+            self.assertEqual(reference, checks.reference_rate(checks.DEFAULT_MODEL), name)
+            self.assertEqual(reference["version"], "openrouter-2026-11")
+
+    def test_listed_rates_are_named_as_openrouter_and_edited_ones_are_not(self):
+        listed = check_input(model="ollama/llama3.2:3b", input_per_million_usd="0.05", output_per_million_usd="0.33").pricing()
+        self.assertEqual(listed.version, "openrouter-2026-11")
+        self.assertIn("openrouter.ai", listed.source)
+        edited = check_input(model="ollama/llama3.2:3b", input_per_million_usd="0.07", output_per_million_usd="0.33").pricing()
+        self.assertEqual(edited.version, "entered-prices")
+        self.assertNotIn("openrouter", edited.source.lower())
+        unknown = check_input(model="ollama/mystery:7b", input_per_million_usd="0.05", output_per_million_usd="0.33").pricing()
+        self.assertEqual(unknown.version, "entered-prices")
+        named = check_input(model="ollama/llama3.2:3b", input_per_million_usd="0.05", output_per_million_usd="0.33",
+                            pricing_version="mine").pricing()
+        self.assertEqual(named.version, "mine")
 
 
 class PipelineTests(unittest.TestCase):

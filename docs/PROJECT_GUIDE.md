@@ -16,6 +16,7 @@ AI application costs change with prompts, models, context, retries and execution
 | **Limits** | The conditions a check must meet (cost, quality, behavior); the verdict is pass, fail or inconclusive |
 | **Analyst** | A model that reads a check's evidence and proposes fixes. It cannot run anything |
 | **Fix** | A prompt the analyst proposed. It is measured as a check against the original baseline |
+| **Cost per successful task** | Mean cost per request divided by the share of correct answers: what one right answer costs. Needs a score on every case |
 | **Judge** | A model that scores answers against a rubric, when there is no single right label |
 | **Recorded example** | A real session replayed without any model |
 
@@ -23,14 +24,14 @@ AI application costs change with prompts, models, context, retries and execution
 
 - **Checks:** edit prompts, cases, scoring and limits in the browser (or call the API); a runner executes both versions, and the comparison is saved server-side when the second finishes. Presets: support triage (label match) and refund replies (judged).
 - **Scoring:** `exact`, `normalized` and `llm_judge` evaluators in a registry. A judge's reason and cost are stored on the case, outside the workload cost; no usable verdict means no score, so a quality limit turns inconclusive.
-- **Analysis:** paired-case cost and latency, model and case contributors, execution metrics, monthly projections, what-if repricing and policy gates. Missing usage, failed cases or incomplete quality coverage make a comparison inconclusive.
+- **Analysis:** paired-case cost, cost per successful task (cost per request over the share of correct answers; not measured unless every case is scored) and latency, model and case contributors, execution metrics, monthly projections, what-if repricing and policy gates. Missing usage, failed cases or incomplete quality coverage make a comparison inconclusive.
 - **Analyst:** starts from a digest of what CostGuard already computed (limits, cost drivers, prompt change, changed cases), uses three read-only tools and proposes one to three prompts. Its spend is recorded separately, and every number in a finding is checked against its evidence.
-- **Fix search:** one click runs every proposed fix; the runner compares each with the original baseline and limits, and a deterministic rule highlights the cheapest passing fix.
+- **Fix search:** one click runs every proposed fix; the runner compares each with the original baseline and limits, and a deterministic rule highlights the passing fix with the lowest cost per successful task.
 - **Replay:** `examples/recorded/support-triage.json` is a real session (check, analyst run, three fixes) loaded instantly by `POST /api/v1/examples/recorded`, `make recorded` or the home page. Verdicts are recomputed on load.
 - **Surfaces over one service layer:** browser, HTTP API, CLI, MCP and the runner all call `costguard/service.py`. MCP adds `list_checks`, `get_check` and `explain_check`; `start_check` (paid calls) needs `COSTGUARD_MCP_ALLOW_RUNS=1`.
 - **Events and telemetry:** one JSON line per event through pluggable sinks (`events.add_sink`). With `make observe`, OpenTelemetry traces and metrics (a span per run, case and model call; spend, tokens, duration and verdicts) go to a provisioned Grafana dashboard; off by default.
 - **DevOps:** GitHub Actions builds the image, runs the unit tests, a cost gate on recorded runs (the verbose candidate is blocked, the fix passes, both shown in the job summary) and the end-to-end workflow on the Compose stack.
-- **Verification:** 139 unit tests and the mock end-to-end workflow pass.
+- **Verification:** 165 unit tests and the mock end-to-end workflow pass.
 
 ## Components and responsibilities
 
@@ -66,7 +67,7 @@ See "Extending it" in the README: a new evaluator is one registered function, an
 
 Open `http://localhost:8000` → **Load the recorded example** → read the verdict and limits table → the prompt diff and why the cost changed → **Explain and fix**: the analyst's findings (number-checked, linked to cases), then the scoreboard of three measured fixes and the highlighted best one → try other prices with **What if prices change?** → **New check** for a live run or the judged refund preset → show `bash examples/ci/gate.sh` or the CI job summary blocking the candidate. The step-by-step script is [DEMO.md](DEMO.md).
 
-Recorded on a laptop RTX 3070 Ti (`llama3.2:3b` workload at temperature 0, `granite4.2:8b` analyst): the "helpful" candidate prompt cost +1,045 % per request and dropped quality from 6/8 to 0/8; the analyst proposed three prompts and all three passed against the original baseline (0 %, −11 %, −20 % cost). In another live session one of three failed at 5/8, so the fix search does not guarantee a pass. On Groq (`qwen/qwen3.8-27b`, catalog prices) the candidate cost +2,204 % and failed quality; those runs are the evidence for the CI cost gate. Local prices are notional reference rates, not provider billing.
+Recorded on a laptop RTX 3070 Ti (`llama3.2:3b` workload at temperature 0, `granite4.2:8b` analyst): the "helpful" candidate prompt cost +1,045 % per request and dropped quality from 6/8 to 0/8; the analyst proposed three prompts and all three passed against the original baseline (0 %, −11 %, −20 % cost per request; 0 %, −33 %, −32 % per successful task, so the second is the best fix). In another live session one of three failed at 5/8, so the fix search does not guarantee a pass. On Groq (`qwen/qwen3.8-27b`, catalog prices) the candidate cost +2,204 % and failed quality; those runs are the evidence for the CI cost gate. Live checks price local and cloud models at their OpenRouter reference rates (the recorded run above used notional rates), not provider billing.
 
 ## Boundaries and next step
 

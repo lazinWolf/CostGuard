@@ -13,6 +13,27 @@ async function api(path, body, method) {
   return data;
 }
 
+// Prefill price fields with the OpenRouter reference rate for a gateway model ID and say where they came from.
+// A model without a listed rate keeps what the person typed, but not a reference rate left from another model.
+async function fillReferenceRate(model, fields, note) {
+  let rate = null;
+  try { rate = await api('reference-prices?model=' + encodeURIComponent(model.trim())); } catch (error) {}  // null when unlisted
+  const filled = [fields.input, fields.output, fields.version].filter(Boolean);
+  if (rate) {
+    fields.input.value = rate.input_per_million_usd;
+    fields.output.value = rate.output_per_million_usd;
+    if (fields.version) fields.version.value = rate.version;
+    filled.forEach(field => field.dataset.reference = '1');
+  } else if (fields.input.dataset.reference) {
+    // Another model's reference rate must not stay behind under this model's name.
+    filled.forEach(field => { field.value = ''; delete field.dataset.reference; });
+  }
+  note.textContent = rate
+    ? `OpenRouter rate for ${rate.model}: $${rate.input_per_million_usd} in / $${rate.output_per_million_usd} out per million tokens.`
+    : 'No reference price is listed for this model: enter the provider\'s price.';
+  return rate;
+}
+
 // Disable every button while `work` runs; show its failure in `#message` if there is one.
 async function busy(work) {
   const buttons = document.querySelectorAll('button');

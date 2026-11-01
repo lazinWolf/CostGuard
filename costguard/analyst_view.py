@@ -7,7 +7,7 @@ and the measured fixes. The page template only lays this out.
 from decimal import Decimal
 from urllib.parse import quote
 
-from . import db, service
+from . import db, diagnosis, service
 from .investigation import NUMBER, PROPOSAL_REMINDER, evidence_numbers, proposals_of, unsupported_numbers
 
 DEFAULT_QUESTION = ("Explain the cost and quality change, inspect the cases that changed most, "
@@ -42,8 +42,10 @@ def analyst_view(check: service.Check) -> dict:
 def _variant(label: str, artifact, report: dict, side: str) -> dict:
     """One row of the baseline / this version summary."""
     economic = report.get("economic") or {}
+    success, none = diagnosis.success_side(report, side)
     return {"label": label, "id": str(artifact.artifact_id), "name": artifact.name,
             "cost": (economic.get("cost_per_request_usd") or {}).get(side),
+            "cost_per_success": success, "no_successes": none,
             "quality": (economic.get("quality_score") or {}).get(side), "cases": len(artifact.cases),
             "status": report["status"] if side == "candidate" else None,
             "words": len(artifact.configuration.get("system_prompt", "").split())}

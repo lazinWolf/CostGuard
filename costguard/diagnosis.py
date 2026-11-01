@@ -128,6 +128,41 @@ def _candidate_quality(report: dict) -> Decimal | None:
     return None if scores is None else scores[1]
 
 
+def _success(report: dict) -> dict | None:
+    """The stored cost per successful task, or None when it was not measured."""
+    return (report.get("economic") or {}).get("cost_per_successful_task_usd")
+
+
+def success_side(report: dict, side: str) -> tuple[str | None, bool]:
+    """(cost per successful task, whether this side had no successes at all) for 'baseline' or 'candidate'.
+    The cost is None both when it was not measured and when there was no success; the flag tells them apart."""
+    success = _success(report)
+    cost = success and success[side]
+    return cost, bool(success) and cost is None
+
+
+def _success_increase(report: dict) -> Decimal | None:
+    success = _success(report)
+    if success is None:
+        return None
+    if success["candidate"] is None:
+        return INFINITE  # Never succeeding is the largest possible increase.
+    return None if success["delta_percent"] is None else Decimal(str(success["delta_percent"]))
+
+
+def _candidate_success_cost(report: dict) -> Decimal | None:
+    success = _success(report)
+    if success is None:
+        return None
+    return INFINITE if success["candidate"] is None else Decimal(str(success["candidate"]))
+
+
+def _show_success(show: Callable[[Decimal], str]) -> Callable[[dict, Decimal], str]:
+    return lambda report, value: "no successful tasks" if value.is_infinite() else show(value)
+
+
+INFINITE = Decimal("Infinity")
+
 LIMITS: dict[str, Limit] = {
     "max_cost_increase_percent": Limit(
         "cost per request may rise by at most {}%",
@@ -137,6 +172,10 @@ LIMITS: dict[str, Limit] = {
         "cost per request at most ${}",
         lambda r: _dig(r, "economic", "cost_per_request_usd", "candidate"),
         lambda r, v: format_usd(v)),
+    "max_cost_per_success_increase_percent": Limit(
+        "cost per successful task may rise by at most {}%", _success_increase, _show_success(percent)),
+    "max_candidate_cost_per_success_usd": Limit(
+        "cost per successful task at most ${}", _candidate_success_cost, _show_success(format_usd)),
     "max_monthly_cost_usd": Limit(
         "projected monthly cost at most ${}",
         lambda r: _dig(r, "economic", "monthly_projection", "cost_usd", "candidate"),
@@ -239,14 +278,18 @@ def prompt_change(before: str, after: str) -> dict:
 
 
 def pick_winner(fixes: list[dict]) -> str | None:
-    """The name of the cheapest fix that passes every limit; ties go to the shorter prompt.
+    """The name of the fix that passes every limit and pays the least per successful task.
 
-    Deterministic on purpose: the analyst proposes, measurements and this rule decide. None when no fix passes.
+    Ties go to the shorter prompt. A fix with no cost per success (not every case scored, or no successes)
+    ranks by cost per request instead, but only when none of the passing fixes has one. Deterministic on
+    purpose: the analyst proposes, measurements and this rule decide. None when no fix passes.
     """
-    passing = [fix for fix in fixes if fix.get("status") == "pass" and fix.get("cost") is not None]
-    if not passing:
-        return None
-    return min(passing, key=lambda fix: (Decimal(str(fix["cost"])), fix["words"]))["name"]
+    passing = [fix for fix in fixes if fix.get("status") == "pass"]
+    for measure in ("cost_per_success", "cost"):
+        ranked = [fix for fix in passing if fix.get(measure) is not None]
+        if ranked:
+            return min(ranked, key=lambda fix: (Decimal(str(fix[measure])), fix["words"]))["name"]
+    return None
 
 
 def judge_spend(*artifacts) -> dict | None:
@@ -275,17 +318,35 @@ def _tone(change, worse_when: str) -> str:
     return "bad" if rising == (worse_when == "up") else "good"
 
 
+HINT = "What one correct answer costs: cost per request divided by the share of answers that are right."
+
+
+def _success_stat(success: dict) -> dict:
+    if success["candidate"] is None:
+        return {"label": "Cost per successful task", "hint": HINT, "value": "No successes",
+                "was": "was " + format_usd(success["baseline"]) if success["baseline"] is not None else "no baseline successes",
+                "change": None, "tone": "bad"}
+    return {"label": "Cost per successful task", "hint": HINT, "value": format_usd(success["candidate"]),
+            "was": "was " + format_usd(success["baseline"]) if success["baseline"] is not None else "baseline had no successes",
+            "change": None if success["delta_percent"] is None else percent(success["delta_percent"]),
+            "tone": _tone(success["delta_percent"], "up")}
+
+
 def headline(report: dict, breakdown_: dict | None) -> list[dict]:
     """The numbers a reader sees first: what it costs, how many answers are right, and the output behind both."""
     economic = report.get("economic")
     if not economic:
         return []
+    stats = []
+    success = economic.get("cost_per_successful_task_usd")
+    if success:
+        stats.append(_success_stat(success))
     projection = economic.get("monthly_projection")
     money = projection["cost_usd"] if projection else economic["cost_per_request_usd"]
-    stats = [{"label": f"Cost per month at {projection['requests']:,} requests" if projection else "Cost per request",
+    stats.append({"label": f"Cost per month at {projection['requests']:,} requests" if projection else "Cost per request",
               "value": format_usd(money["candidate"]), "was": f"was {format_usd(money['baseline'])}",
               "change": None if money["delta_percent"] is None else percent(money["delta_percent"]),
-              "tone": _tone(money["delta_percent"], "up")}]
+              "tone": _tone(money["delta_percent"], "up")})
     scores, cases = _quality_scores(report), report.get("baseline_case_count")
     if scores:
         before, after = (round(score * cases) for score in scores)

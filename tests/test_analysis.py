@@ -160,5 +160,56 @@ class ComparisonTests(unittest.TestCase):
             ComparisonRequest.model_validate(data)
 
 
+class CostPerSuccessTests(unittest.TestCase):
+    """Cost per successful task is mean cost per request over mean quality score."""
+
+    def compare(self, baseline_score="1", candidate_score="0.5", **policy):
+        data = request_data()  # $0.02 per request before, $0.025 after.
+        data["baseline"]["runs"][0]["quality_score"] = baseline_score
+        data["candidate"]["runs"][0]["quality_score"] = candidate_score
+        data["policy"] = policy or None
+        return compare_workloads(ComparisonRequest.model_validate(data))
+
+    def test_a_cheaper_request_can_be_a_dearer_success(self) -> None:
+        success = self.compare().cost_per_successful_task_usd
+        self.assertEqual((success.baseline, success.candidate), (Decimal("0.02"), Decimal("0.05")))
+        self.assertEqual((success.delta, success.delta_percent), (Decimal("0.03"), Decimal("150.00")))
+
+    def test_a_fractional_score_counts_as_a_partial_success(self) -> None:
+        success = self.compare("0.8", "0.8").cost_per_successful_task_usd
+        self.assertEqual((success.baseline, success.candidate), (Decimal("0.025"), Decimal("0.03125")))
+
+    def test_a_side_without_successes_has_no_cost_per_success(self) -> None:
+        success = self.compare(candidate_score="0").cost_per_successful_task_usd
+        self.assertEqual((success.baseline, success.candidate), (Decimal("0.02"), None))
+        self.assertIsNone(success.delta_percent)
+
+    def test_it_is_not_measured_unless_every_case_is_scored_on_both_sides(self) -> None:
+        self.assertIsNone(self.compare(candidate_score=None).cost_per_successful_task_usd)
+
+    def test_the_increase_limit_compares_against_the_baseline(self) -> None:
+        self.assertEqual(self.compare(max_cost_per_success_increase_percent=150).policy.status, "pass")
+        policy = self.compare(max_cost_per_success_increase_percent=100).policy
+        self.assertEqual(policy.status, "fail")
+        self.assertEqual(policy.violations, ["cost per successful task increase 150.00% exceeds 100%"])
+
+    def test_the_absolute_limit_is_checked_against_the_candidate(self) -> None:
+        self.assertEqual(self.compare(max_candidate_cost_per_success_usd="0.05").policy.status, "pass")
+        self.assertEqual(self.compare(max_candidate_cost_per_success_usd="0.04").policy.status, "fail")
+
+    def test_a_candidate_that_never_succeeds_breaks_either_limit(self) -> None:
+        for limit in ({"max_cost_per_success_increase_percent": 1000}, {"max_candidate_cost_per_success_usd": 1000}):
+            policy = self.compare(candidate_score="0", **limit).policy
+            self.assertEqual((policy.status, policy.violations), ("fail", ["the candidate has no successful tasks"]))
+
+    def test_a_baseline_without_successes_leaves_the_increase_unknown(self) -> None:
+        policy = self.compare(baseline_score="0", max_cost_per_success_increase_percent=10).policy
+        self.assertEqual(policy.status, "inconclusive")
+
+    def test_unscored_cases_make_the_limit_inconclusive_not_a_pass(self) -> None:
+        policy = self.compare(candidate_score=None, max_cost_per_success_increase_percent=10).policy
+        self.assertEqual(policy.status, "inconclusive")
+
+
 if __name__ == "__main__":
     unittest.main()

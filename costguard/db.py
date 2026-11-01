@@ -215,6 +215,12 @@ def list_comparisons(limit: int | None = None) -> list[dict]:
                                       ComparisonRow.report["status"].astext.label("status"),
                                       ComparisonRow.report["economic"]["cost_per_request_usd"]["delta_percent"]
                                       .astext.label("cost_change"),
+                                      ComparisonRow.report["economic"]["cost_per_successful_task_usd"]["delta_percent"]
+                                      .astext.label("success_change"),
+                                      ComparisonRow.report["economic"]["cost_per_successful_task_usd"]
+                                      .astext.label("success_measured"),
+                                      ComparisonRow.report["economic"]["cost_per_successful_task_usd"]["candidate"]
+                                      .astext.label("success_candidate"),
                                       ComparisonRow.report["economic"]["quality_score"]["baseline"]
                                       .astext.label("quality_baseline"),
                                       ComparisonRow.report["economic"]["quality_score"]["candidate"]
@@ -230,6 +236,9 @@ def list_comparisons(limit: int | None = None) -> list[dict]:
                  "status": r.status, "created_at": r.created_at.isoformat(),
                  "baseline_name": r.baseline_name, "candidate_name": r.candidate_name,
                  "model": r.model, "cost_change": r.cost_change,
+                 "success_change": r.success_change,
+                 # Measured, yet nothing succeeded: distinct from a check whose answers were not all scored.
+                 "no_successes": r.success_measured is not None and r.success_candidate is None,
                  "quality_baseline": r.quality_baseline, "quality_candidate": r.quality_candidate,
                  "quality_cases": int(r.quality_cases) if r.quality_cases else None} for r in rows]
 

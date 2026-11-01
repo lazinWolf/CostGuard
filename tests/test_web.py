@@ -44,6 +44,12 @@ class CheckPageTests(unittest.TestCase):
               patch("costguard.web.db.get_analyst_settings", return_value=None)):
             return TestClient(app, base_url="http://localhost").get("/checks/check-1")
 
+    def test_the_headline_leads_with_what_a_successful_task_costs(self):
+        page = self.render().text
+        self.assertIn("Cost per successful task", page)
+        self.assertLess(page.index("Cost per successful task"), page.index("Cost per month"))
+        self.assertIn("cost per request divided by the share of answers that are right", page)
+
     def test_the_page_leads_with_the_verdict_and_each_limit(self):
         response = self.render()
         self.assertEqual(response.status_code, 200, response.text[:300])
@@ -88,7 +94,8 @@ class AnalystSectionTests(unittest.TestCase):
             "calls": [], "events": [], "cost_usd": "0", "cost_known": True, "conclusion": None, **result},
             "request": {"analyst": {"provider": "test", "model": "analyst", "max_calls": 5}, "source_spec": {"x": 1}}}
         measured = {"fix-1": {"report": {"status": "pass", "baseline_case_count": 8, "economic": {
-            "cost_per_request_usd": {"candidate": "0.0001"}, "quality_score": {"candidate": "1"}}}}}
+            "cost_per_request_usd": {"candidate": "0.0001"}, "quality_score": {"candidate": "1"},
+            "cost_per_successful_task_usd": {"baseline": "0.01", "candidate": "0.0001"}}}}}
         saved, left, right = saved_check()
         artifacts = {str(left.artifact_id): left, str(right.artifact_id): right}
         related = {"investigations": [{"id": "inv-1", "state": state}], "source": None}
@@ -117,6 +124,7 @@ class AnalystSectionTests(unittest.TestCase):
         page = self.page({"proposals": self.proposals[:1]},
                          [{"name": "analyst-fix-1", "job_id": "job-1", "report_id": "fix-1"}])
         self.assertIn("Fix passes", page)
+        self.assertIn("$0.0001 per successful task (baseline $0.01)", page)
         self.assertIn('<span class="chip">best fix</span>', page)
         self.assertIn('href="/checks/fix-1"', page)
         self.assertNotIn("Test the", page)
@@ -141,6 +149,30 @@ class NewCheckPageTests(unittest.TestCase):
                 page = TestClient(app, base_url="http://localhost").get("/checks/new").text
             box = page[page.index('id="use-as-analyst"'):].split(">", 1)[0]
             self.assertNotIn("checked", box)
+
+    def test_the_cost_limit_is_per_successful_task(self):
+        with patch("costguard.web.db.get_analyst_settings", return_value=None):
+            page = TestClient(app, base_url="http://localhost").get("/checks/new").text
+        self.assertIn("Cost per successful task may rise by at most (%)", page)
+        self.assertIn("max_cost_per_success_increase_percent:", page)
+        self.assertNotIn("max_cost_increase_percent", page)
+
+    def test_prices_start_at_the_openrouter_rate_and_follow_the_model(self):
+        with patch("costguard.web.db.get_analyst_settings", return_value=None):
+            page = TestClient(app, base_url="http://localhost").get("/checks/new").text
+        self.assertIn('id="input-price" type="number" min="0" step="any" required value="0.05"', page)
+        self.assertIn('id="output-price" type="number" min="0" step="any" required value="0.33"', page)
+        self.assertIn("OpenRouter reference", page)
+        self.assertNotIn("notional", page.lower())
+        self.assertIn("fillReferenceRate", page)
+
+    def test_the_reference_price_endpoint(self):
+        client = TestClient(app, base_url="http://localhost")
+        found = client.get("/api/v1/reference-prices", params={"model": "ollama/granite4.2:8b-q4_K_M"})
+        self.assertEqual((found.status_code, found.json()["input_per_million_usd"], found.json()["output_per_million_usd"]),
+                         (200, "0.06", "0.15"))
+        unlisted = client.get("/api/v1/reference-prices", params={"model": "ollama/mystery"})
+        self.assertEqual((unlisted.status_code, unlisted.json()), (200, None))
 
     def test_no_favicon_is_a_quiet_204(self):
         self.assertEqual(TestClient(app, base_url="http://localhost").get("/favicon.ico").status_code, 204)
@@ -197,6 +229,14 @@ class JudgedPageTests(unittest.TestCase):
 
 
 class CheckListTests(unittest.TestCase):
+    def test_a_check_where_nothing_succeeded_says_so_instead_of_a_dash(self):
+        row = {"id": "c", "candidate_name": "cand", "baseline_name": "base", "model": "m", "status": "fail",
+               "created_at": "2026-11-01T10:00:00", "correct": "6/8 → 0/8 correct", "fixes": [], "recorded": False,
+               "success_change": None, "cost_change": "10", "no_successes": True}
+        with patch("costguard.web.service.list_checks", return_value=[row]):
+            page = TestClient(app, base_url="http://localhost").get("/").text
+        self.assertIn("no successes", page)
+
     def test_fixes_nest_under_the_check_they_fix_in_order(self):
         row = lambda name: {"id": name, "quality_baseline": "0.75", "quality_candidate": "0.25", "quality_cases": 8}
         rows = [row("fix-2"), row("fix-1"), row("original"), row("unrelated")]  # newest first

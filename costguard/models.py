@@ -77,6 +77,9 @@ class Workload(Schema):
 class ComparisonPolicy(Schema):
     max_cost_increase_percent: Decimal | None = Field(default=None, ge=0)
     max_candidate_cost_per_request_usd: Decimal | None = Field(default=None, ge=0)
+    # Limits on what one *correct* answer costs: mean cost per request divided by mean quality score.
+    max_cost_per_success_increase_percent: Decimal | None = Field(default=None, ge=0)
+    max_candidate_cost_per_success_usd: Decimal | None = Field(default=None, ge=0)
     max_monthly_cost_usd: Decimal | None = Field(default=None, ge=0)
     min_candidate_quality_score: Decimal | None = Field(default=None, ge=0, le=1)
     # Regression form of the quality policy: how far the candidate may score below the
@@ -129,6 +132,18 @@ class MetricComparison(Schema):
     delta_percent: Decimal | None
 
 
+class SuccessCost(Schema):
+    """What one successful task costs: mean cost per request divided by mean quality score.
+
+    A side is None when it had no successes (the cost per success is unbounded). The whole
+    metric is absent from a report when the cases are not all scored on both sides.
+    """
+    baseline: Decimal | None
+    candidate: Decimal | None
+    delta: Decimal | None
+    delta_percent: Decimal | None
+
+
 class ModelCostComparison(Schema):
     provider: str
     model: str
@@ -160,6 +175,8 @@ class ComparisonReport(Schema):
     mean_latency_ms: MetricComparison
     quality_score: MetricComparison | None
     quality_cases_compared: int
+    # Absent on reports saved before the metric existed, and when quality is not fully scored.
+    cost_per_successful_task_usd: SuccessCost | None = None
     case_costs: list[CaseCostComparison]
     model_costs: list[ModelCostComparison]
     monthly_projection: MonthlyProjection | None

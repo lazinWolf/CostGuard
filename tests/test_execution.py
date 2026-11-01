@@ -106,6 +106,7 @@ class ExecutionTests(unittest.TestCase):
         text = _markdown(report)
         self.assertIn("### candidate vs baseline", text)
         self.assertIn("❌ FAIL", text)
+        self.assertIn("| Cost per successful task (USD) | 0.01 | 0.02 | +100% |", text)
         self.assertIn("| Cost per request (USD) | 0.01 | 0.02 | +100% |", text)
         self.assertIn("| Monthly cost at 1,000 requests (USD) | 10.00 | 20.00 | +100% |", text)
         self.assertIn("| Mean latency (ms) | 100 | 100 | 0% |", text)

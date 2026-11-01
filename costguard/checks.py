@@ -21,9 +21,35 @@ EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 PRESETS = {"support-triage": "support_triage.json", "refund-reply": "refund_reply.json"}
 
 
+# The model the presets are written for; its reference rates are what a preset prefills.
+DEFAULT_MODEL = "ollama/llama3.2:3b-instruct-q4_K_M"
+
+
+def reference_prices() -> dict:
+    """OpenRouter list prices for the models CostGuard is used with (examples/reference_prices.json)."""
+    return json.loads((EXAMPLES / "reference_prices.json").read_text())
+
+
+def reference_rate(model: str) -> dict | None:
+    """The reference version, source and rates for a gateway model ID, or None when it is not listed.
+
+    Local and cloud models are priced alike, at what the same model costs on OpenRouter, so a check
+    compares like with like. A gateway ID matches when the part after the provider starts with a listed prefix.
+    """
+    table = reference_prices()
+    name = model.split("/", 1)[-1].lower()
+    for entry in table["models"]:
+        if any(name.startswith(prefix) for prefix in entry["gateway_prefixes"]):
+            return {"version": table["version"], "source": table["source"], "model": entry["openrouter_id"],
+                    "input_per_million_usd": entry["input_per_million_usd"],
+                    "output_per_million_usd": entry["output_per_million_usd"]}
+    return None
+
+
 def preset(name: str = "support-triage") -> dict:
-    """A starting suite: both prompts, the cases, limits and reference prices."""
-    return json.loads((EXAMPLES / PRESETS.get(name, PRESETS["support-triage"])).read_text())
+    """A starting suite: both prompts, the cases, limits and the reference prices of its default model."""
+    suite = json.loads((EXAMPLES / PRESETS.get(name, PRESETS["support-triage"])).read_text())
+    return {**suite, "reference_pricing": reference_rate(DEFAULT_MODEL)}
 
 
 def presets() -> list[dict]:
@@ -69,9 +95,12 @@ class CheckInput(Schema):
 
     def pricing(self) -> PricingCatalog:
         provider, name = self.route
-        reference = preset()["reference_pricing"]
+        reference = reference_rate(self.model)
+        listed = reference is not None and (self.input_per_million_usd, self.output_per_million_usd) == (
+            Decimal(reference["input_per_million_usd"]), Decimal(reference["output_per_million_usd"]))
         return PricingCatalog(
-            version=self.pricing_version or reference["version"], source=reference["source"],
+            version=self.pricing_version or (reference["version"] if listed else "entered-prices"),
+            source=reference["source"] if listed else "Per-token prices entered when the check was created.",
             entries=[{"provider": provider, "model": name,
                       "input_per_million_usd": self.input_per_million_usd,
                       "output_per_million_usd": self.output_per_million_usd}])

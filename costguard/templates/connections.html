@@ -13,11 +13,14 @@
 <label for="analyst-model">Gateway model ID (provider/model)</label><input id="analyst-model" list="models" required placeholder="provider/model" value="{{(analyst.provider ~ '/' ~ analyst.model) if analyst else ''}}"><datalist id="models">{% for model in gateway.models %}<option value="{{model}}">{% endfor %}</datalist>
 <label for="price-version">Analyst pricing version</label><input id="price-version" required maxlength="100" placeholder="my-prices-2026-10" value="{{analyst.pricing_version if analyst else ''}}">
 <div class="grid"><div><label for="input-price">Input USD / million tokens</label><input id="input-price" type="number" min="0" step="any" required value="{{analyst.input_per_million_usd if analyst else ''}}"></div><div><label for="output-price">Output USD / million tokens</label><input id="output-price" type="number" min="0" step="any" required value="{{analyst.output_per_million_usd if analyst else ''}}"></div></div>
-<p class="muted">Supply explicit prices. Zero can represent a free mock or marginal local inference; infrastructure cost is not included.</p>
+<p id="analyst-price-note" class="muted">Choosing a model prefills its OpenRouter rate, so a local analyst is priced like the same model on OpenRouter. Edit the rates to use your own; zero can represent a free mock. Infrastructure cost is not included.</p>
 <div class="grid"><div><label for="max-calls">Maximum model calls</label><input id="max-calls" type="number" min="1" max="8" required value="{{analyst.max_calls if analyst else 5}}"></div><div><label for="max-tokens">Maximum output tokens / call</label><input id="max-tokens" type="number" min="64" max="4096" required value="{{analyst.max_output_tokens if analyst else 1200}}"></div><div><label for="spend">Stop after observed spend (USD)</label><input id="spend" type="number" min="0.000001" step="any" required value="{{analyst.stop_after_usd if analyst else '0.10'}}"></div><div><label for="timeout">Timeout / call (seconds)</label><input id="timeout" type="number" min="1" max="600" required value="{{analyst.timeout_seconds if analyst else 120}}"></div></div>
 <p class="muted">Local models on CPU can need several minutes per call; also raise the provider's request timeout in Bifrost.</p>
 <p><button id="save-analyst" type="submit">Save analyst settings</button> <a href="/">Back to checks</a></p><p id="analyst-message" class="notice" hidden></p></form>
 <script>
+document.getElementById('analyst-model').addEventListener('change', event => fillReferenceRate(event.target.value, {
+  input: document.getElementById('input-price'), output: document.getElementById('output-price'),
+  version: document.getElementById('price-version')}, document.getElementById('analyst-price-note')));
 document.getElementById('analyst-form').addEventListener('submit', async event => {
   event.preventDefault();
   const field = id => document.getElementById(id);

@@ -2050,7 +2050,7 @@
     "policy": {
      "max_quality_drop": "0",
      "max_monthly_cost_usd": null,
-     "max_cost_increase_percent": "20",
+     "max_cost_per_success_increase_percent": "20",
      "min_candidate_quality_score": null,
      "max_candidate_mean_latency_ms": null,
      "max_candidate_retries_per_case": null,
@@ -2082,7 +2082,7 @@
     "policy": {
      "max_quality_drop": "0",
      "max_monthly_cost_usd": null,
-     "max_cost_increase_percent": "20",
+     "max_cost_per_success_increase_percent": "20",
      "min_candidate_quality_score": null,
      "max_candidate_mean_latency_ms": null,
      "max_candidate_retries_per_case": null,
@@ -2114,7 +2114,7 @@
     "policy": {
      "max_quality_drop": "0",
      "max_monthly_cost_usd": null,
-     "max_cost_increase_percent": "20",
+     "max_cost_per_success_increase_percent": "20",
      "min_candidate_quality_score": null,
      "max_candidate_mean_latency_ms": null,
      "max_candidate_retries_per_case": null,
@@ -2146,7 +2146,7 @@
     "policy": {
      "max_quality_drop": "0",
      "max_monthly_cost_usd": null,
-     "max_cost_increase_percent": "20",
+     "max_cost_per_success_increase_percent": "20",
      "min_candidate_quality_score": null,
      "max_candidate_mean_latency_ms": null,
      "max_candidate_retries_per_case": null,
