@@ -1,0 +1,5 @@
+{"version": "sim-2026-11", "source": "ASSUMED list prices for the simulation. Replace with your provider's current prices.",
+ "cache_ttl_seconds": 300, "min_cacheable_tokens": 1024,
+ "models": {
+  "gpt-4o":      {"in": "2.50", "cached_in": "1.25", "out": "10.00"},
+  "gpt-4o-mini": {"in": "0.15", "cached_in": "0.075", "out": "0.60"}}}
