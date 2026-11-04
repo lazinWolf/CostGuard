@@ -44,8 +44,9 @@ def check(r, truth, label, ids_comparable=True):
 
 
 if __name__ == "__main__":
-    log = sys.argv[1] if len(sys.argv) > 1 else "out/calls.jsonl"
-    truth = json.load(open(sys.argv[2] if len(sys.argv) > 2 else "out/truth.json"))
+    here = Path(__file__).resolve().parent
+    log = sys.argv[1] if len(sys.argv) > 1 else str(here / "out" / "calls.jsonl")
+    truth = json.load(open(sys.argv[2] if len(sys.argv) > 2 else here / "out" / "truth.json"))
     check(run(log), truth, "full log")
     with tempfile.TemporaryDirectory() as d:
         for label, drop in [("no session_id (rebuilt from gaps)", ["session_id"]), ("no tool_sig", ["tool_sig"]),
