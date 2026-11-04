@@ -39,6 +39,8 @@ existing exact-money engine, replay runner and agreement scorer as the trust lay
 
 ## Where the gap is
 
+> **Correction after research ([WHO-AND-WHY.md](WHO-AND-WHY.md)):** each piece below already exists in some tool. The honest opening is integration and low setup effort, not a missing feature.
+
 - **Provider spend limits** are account-wide and blunt: they stop the whole app, not one user's loop.
 - **Gateways and observability tools** show spend and sometimes enforce per-key budgets, but are
   mostly dashboards you must read. Unverified: how well they stop loops or degrade gracefully.

@@ -7,6 +7,7 @@ Working branch for rethinking CostGuard. Read in this order:
 3. [PATH.md](PATH.md): why the regression gate is not the core; unit economics instead.
 4. [DEEPDIVE.md](DEEPDIVE.md): a working prototype of the report, tested against planted ground truth.
 5. [PRODUCT.md](PRODUCT.md): the synthesis as a product (Guard, Know, Optimize) and what to build first.
+6. [WHO-AND-WHY.md](WHO-AND-WHY.md): web research on who would use it and why, what already exists, and how to test demand.
 
 Try the prototype (standard library only, no install):
 
