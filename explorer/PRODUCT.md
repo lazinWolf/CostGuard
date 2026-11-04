@@ -76,6 +76,8 @@ to hobbyists who will not pay.
 
 ## What to build first, and how to know it works
 
+> **Update from [MARKET.md](MARKET.md):** after the 2026 LiteLLM credential-stealing release, lead with reading logs and traces (no keys, no proxy) and make the proxy an opt-in enforcement step. Accept Helicone and Langfuse exports to reach displaced users.
+
 Build **Guard plus the first-day report** as one small proxy: budgets, loop stop, alerts, and the
 `unitecon` report from what it captured. It is the quickest route to a real user's real traffic,
 which is the thing missing.
