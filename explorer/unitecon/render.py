@@ -32,8 +32,14 @@ def render(r: dict) -> str:
     u = r["users"]
     add(f"# AI unit economics\n\n{r['calls']:,} calls, {r['sessions']:,} sessions, {u['active']:,} active of {u['registered']:,} "
         f"registered users, {r['days']:.0f} days. Costs are per 30 days unless marked.\n")
+    for note in r.get("notes", []):
+        add(f"> Note: {note}\n")
     for w in r["warnings"]:
         add(f"> Warning: {w}\n")
+    if r.get("reconciliation"):
+        rc = r["reconciliation"]
+        add(f"Checked against the cost the source tool reported on {rc['calls']:,} calls: ours {usd(rc['ours'])}, theirs {usd(rc['theirs'])}"
+            + (f" ({rc['difference']:+.1%})." if rc["difference"] is not None else ".") + "\n")
     plans = r["plans"]
     revenue, margin = sum(p["revenue"] for p in plans.values()), sum(p["margin"] for p in plans.values())
     add(f"**Spend {usd(r['monthly_cost'])} a month** ({usd(r['monthly_cost'] / max(u['active'], 1))} per active user). "

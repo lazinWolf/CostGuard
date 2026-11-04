@@ -9,6 +9,7 @@ Working branch for rethinking CostGuard. Read in this order:
 5. [PRODUCT.md](PRODUCT.md): the synthesis as a product (Guard, Know, Optimize) and what to build first.
 6. [WHO-AND-WHY.md](WHO-AND-WHY.md): web research on who would use it and why, what already exists, and how to test demand.
 7. [MARKET.md](MARKET.md): competitors, the 2026 consolidation, what users need, and what it changes in the plan.
+8. [IMPORT.md](IMPORT.md): the importers for Langfuse, Helicone and OpenTelemetry exports, how they were checked, and their limits.
 
 Try the prototype (standard library only, no install):
 

@@ -31,6 +31,11 @@ def interval(values):
     return pct(values, 5), pct(values, 50), pct(values, 95)
 
 
+def rate(models, call):
+    """The price-table entry for a call: its own model name, or the one it was matched to."""
+    return models[call.priced_as or call.model]
+
+
 def group_sessions(calls):
     sessions = defaultdict(list)
     for c in sorted(calls, key=lambda c: c.ts):
@@ -54,13 +59,22 @@ def analyze(data: Data, plan_prices: dict[str, Decimal], seed: int = 1) -> dict:
     if days < 7:
         out["warnings"].append(f"only {days:.1f} days of data; monthly figures are scaled up and noisy")
 
+    both = [c for c in priced if c.reported is not None]
+    if both:
+        ours, theirs = sum(c.cost for c in both), sum(c.reported for c in both)
+        out["reconciliation"] = {"calls": len(both), "ours": ours, "theirs": theirs,
+                                 "difference": (ours - theirs) / theirs if theirs else None}
+        if theirs and abs((ours - theirs) / theirs) > D("0.10"):
+            out["warnings"].append(f"our cost differs from the source tool's own by {(ours - theirs) / theirs:+.0%}; "
+                                   "check the price table, or whether it counts cache or batch discounts")
+
     # -- Where the money goes ---------------------------------------------------------------
     by_model = defaultdict(lambda: {"cost": D(0), "calls": 0})
     for c in priced:
         by_model[c.model]["cost"] += c.cost
         by_model[c.model]["calls"] += 1
     out["by_model"] = dict(sorted(by_model.items(), key=lambda kv: -kv[1]["cost"]))
-    out["input_cost_share"] = sum(c.inp * D(models[c.model]["in"]) for c in priced) / MILLION / total
+    out["input_cost_share"] = sum(c.inp * D(rate(models, c)["in"]) for c in priced) / MILLION / total
 
     features = {}
     for feature in sorted({c.feature for c in priced}):
@@ -158,8 +172,8 @@ def analyze(data: Data, plan_prices: dict[str, Decimal], seed: int = 1) -> dict:
             growth[c.feature][min(i, 9)].append(c.inp)
             if i:
                 history = max(0, min(c.inp, ok[i - 1].inp + ok[i - 1].out) - c.prefix_tokens)
-                resent += history * D(models[c.model]["in"]) / MILLION
-                capped[c.feature] += max(0, history - window) * D(models[c.model]["in"]) / MILLION
+                resent += history * D(rate(models, c)["in"]) / MILLION
+                capped[c.feature] += max(0, history - window) * D(rate(models, c)["in"]) / MILLION
     out["resent_history_cost"] = resent
     out["context_cap"] = {"window": window, "saving": sum(capped.values()), "by_feature": dict(capped)}
     out["growth"] = {f: {"first": mean([D(v) for v in by[0]]), "tenth": mean([D(v) for v in by[9]]) if by.get(9) else None}
@@ -177,7 +191,7 @@ def analyze(data: Data, plan_prices: dict[str, Decimal], seed: int = 1) -> dict:
         seen = last_seen.get(key)
         last_seen[key] = c.ts
         if c.prefix_tokens >= min_tokens and seen is not None and c.ts - seen <= ttl and c.cached < c.prefix_tokens:
-            p = models[c.model]
+            p = rate(models, c)
             saving = (c.prefix_tokens - c.cached) * (D(p["in"]) - D(p.get("cached_in", p["in"]))) / MILLION
             cache_saving += saving
             eligible += 1

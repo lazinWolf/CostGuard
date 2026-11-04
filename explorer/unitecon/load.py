@@ -1,5 +1,6 @@
 """Read a call log (JSONL) and a price table into typed records, collecting data-quality warnings."""
 import json
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -24,6 +25,8 @@ class Call:
     prefix_tokens: int
     tool_sig: str | None
     cost: Decimal | None = None          # None: model not in the price table
+    reported: Decimal | None = None      # cost the source tool itself reported, for reconciliation
+    priced_as: str | None = None         # the table entry used when the logged name differed
 
 
 @dataclass
@@ -40,10 +43,29 @@ class Data:
         return max(Decimal(str((max(ts) - min(ts)) / 86400)), Decimal("0.01")) if ts else Decimal(0)
 
 
+VERSION_SUFFIX = re.compile(r"^-?(\d{4}-\d{2}-\d{2}|\d{8}|latest)$")
+
+
+def resolve_model(name: str, models: dict) -> str | None:
+    """Exact name, else drop a `provider/` prefix and a trailing date or `latest` (gpt-4o-2024-08-06 -> gpt-4o).
+    Anything else, such as gpt-4o-audio, stays unpriced rather than being priced as a different model."""
+    if name in models:
+        return name
+    bare = name.split("/")[-1]
+    if bare in models:
+        return bare
+    for known in sorted(models, key=len, reverse=True):
+        if bare.startswith(known) and VERSION_SUFFIX.match(bare[len(known):]):
+            return known
+    return None
+
+
 def price_of(call: Call, models: dict) -> Decimal | None:
-    p = models.get(call.model)
+    key = resolve_model(call.model, models)
+    p = models.get(key) if key else None
     if p is None:
         return None
+    call.priced_as = key if key != call.model else None
     cached = min(call.cached, call.inp)
     return ((call.inp - cached) * Decimal(p["in"]) + cached * Decimal(p.get("cached_in", p["in"]))
             + call.out * Decimal(p["out"])) / MILLION
@@ -84,7 +106,8 @@ def load(log: str, prices: str) -> Data:
                     cached=int(e.get("cached_input_tokens") or 0), latency_ms=float(e.get("latency_ms") or 0),
                     ok=e.get("status", "ok") == "ok", attempt=int(e.get("attempt") or 1),
                     prefix_hash=e.get("prefix_hash"), prefix_tokens=int(e.get("prefix_tokens") or 0),
-                    tool_sig=e.get("tool_sig")))
+                    tool_sig=e.get("tool_sig"),
+                    reported=Decimal(str(e["reported_cost_usd"])) if e.get("reported_cost_usd") is not None else None))
         except (KeyError, ValueError, TypeError):
             bad += 1
     data = Data(calls, plans, outcomes, table)
@@ -100,9 +123,12 @@ def load(log: str, prices: str) -> Data:
                                  f"{SESSION_GAP // 60} minutes between a user's calls to one feature, so session figures are approximate")
     if bad:
         data.warnings.append(f"{bad} log lines could not be read and were skipped")
-    unknown = sorted({c.model for c in calls if c.model not in table["models"]})
     for c in calls:
         c.cost = price_of(c, table["models"])
+    unknown = sorted({c.model for c in calls if c.cost is None})
+    renamed = sorted({f"{c.model} as {c.priced_as}" for c in calls if c.priced_as})
+    if renamed:
+        data.warnings.append("priced by matching the model name: " + ", ".join(renamed[:6]) + (" ..." if len(renamed) > 6 else ""))
     if unknown:
         n = sum(c.cost is None for c in calls)
         data.warnings.append(f"{n} calls use models with no price ({', '.join(unknown)}); they are left out of every cost")
